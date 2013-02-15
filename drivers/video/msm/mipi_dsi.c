@@ -69,39 +69,29 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	struct msm_fb_data_type *mfd;
 	struct msm_panel_info *pinfo;
 
-	pr_debug("%s+:\n", __func__);
-
 	mfd = platform_get_drvdata(pdev);
 	pinfo = &mfd->panel_info;
 
-	printk(KERN_INFO"%s is started.. \n", __func__);
-
-	if (mdp_rev >= MDP_REV_41 && mfd->panel_info.type == MIPI_CMD_PANEL)
+	if (mdp_rev >= MDP_REV_41)
 		mutex_lock(&mfd->dma->ov_mutex);
 	else
 		down(&mfd->dma->mutex);
 
-	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
-		mipi_dsi_prepare_clocks();
-		mipi_dsi_ahb_ctrl(1);
-		mipi_dsi_clk_enable();
+	mdp4_overlay_dsi_state_set(ST_DSI_SUSPEND);
 
-		/* make sure dsi_cmd_mdp is idle */
-		mipi_dsi_cmd_mdp_busy();
-	}
+	/* make sure dsi clk is on so that
+	 * dcs commands can be sent
+	 */
+	mipi_dsi_clk_cfg(1);
+
+	/* make sure dsi_cmd_mdp is idle */
+	mipi_dsi_cmd_mdp_busy();
 
 	/*
 	 * Desctiption: change to DSI_CMD_MODE since it needed to
 	 * tx DCS dsiplay off comamnd to panel
 	 */
-
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT) \
-	|| defined(CONFIG_FB_MSM_MIPI_HITACHI_VIDEO_HD_PT) \
-       || defined(CONFIG_FB_MSM_MIPI_DSI_LGIT_FHD)
-	//for power sequence of lgit panel
-#else
 	mipi_dsi_op_mode_config(DSI_CMD_MODE);
-#endif
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 		if (pinfo->lcd.vsync_enable) {
@@ -113,18 +103,13 @@ static int mipi_dsi_off(struct platform_device *pdev)
 		}
 	}
 
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT) \
-	|| defined(CONFIG_FB_MSM_MIPI_HITACHI_VIDEO_HD_PT) \
-       || defined(CONFIG_FB_MSM_MIPI_DSI_LGIT_FHD)
-	//for power sequence of lgit panel.
-#else
 	ret = panel_next_off(pdev);
-#endif
 
 #ifdef CONFIG_MSM_BUS_SCALING
 	mdp_bus_scale_update_request(0);
 #endif
 
+	spin_lock_bh(&dsi_clk_lock);
 	mipi_dsi_clk_disable();
 
 	/* disbale dsi engine */
@@ -133,19 +118,19 @@ static int mipi_dsi_off(struct platform_device *pdev)
 	mipi_dsi_phy_ctrl(0);
 
 	mipi_dsi_ahb_ctrl(0);
+	spin_unlock_bh(&dsi_clk_lock);
 
 	mipi_dsi_unprepare_clocks();
 	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
 		mipi_dsi_pdata->dsi_power_save(0);
 
-	if (mdp_rev >= MDP_REV_41 && mfd->panel_info.type == MIPI_CMD_PANEL)
+	if (mdp_rev >= MDP_REV_41)
 		mutex_unlock(&mfd->dma->ov_mutex);
 	else
 		up(&mfd->dma->mutex);
 
-	pr_debug("End of %s ....:\n", __func__);
+	pr_debug("%s-:\n", __func__);
 
-	printk(KERN_INFO"%s is ended.. \n", __func__);
 	return ret;
 }
 
@@ -163,14 +148,11 @@ static int mipi_dsi_on(struct platform_device *pdev)
 	u32 dummy_xres, dummy_yres;
 	int target_type = 0;
 
-	pr_debug("%s+:\n", __func__);
-
 	mfd = platform_get_drvdata(pdev);
 	fbi = mfd->fbi;
 	var = &fbi->var;
 	pinfo = &mfd->panel_info;
 	esc_byte_ratio = pinfo->mipi.esc_byte_ratio;
-	printk(KERN_INFO"%s is started.. \n", __func__);
 
 	if (mipi_dsi_pdata && mipi_dsi_pdata->dsi_power_save)
 		mipi_dsi_pdata->dsi_power_save(1);
@@ -275,32 +257,11 @@ static int mipi_dsi_on(struct platform_device *pdev)
 		mutex_lock(&mfd->dma->ov_mutex);
 	else
 		down(&mfd->dma->mutex);
-#if defined(CONFIG_MACH_LGE)
-/* LGE_CHANGE
- * in case of WXGA panel,
- * video mode MUST NOT be set prior to power_on_cmd seq.
- * 2012-09-01 chaeuk.lee@lge.com
- */
-	ret = panel_next_on(pdev);
-	if (ret < 0)
-	{
-		if (mdp_rev >= MDP_REV_41)
-			mutex_unlock(&mfd->dma->ov_mutex);
-		else
-			up(&mfd->dma->mutex);
 
-		return ret;
-	} else {
-		ret = 0;
-	}
-	#if defined(CONFIG_FB_MSM_MIPI_HITACHI_VIDEO_HD_PT) || defined(CONFIG_FB_MSM_MIPI_DSI_LGIT_FHD)
-	mipi_dsi_op_mode_config(mipi->mode);
-	#endif
-#else
-	ret = panel_next_on(pdev);
+	if (mfd->op_enable)
+		ret = panel_next_on(pdev);
 
 	mipi_dsi_op_mode_config(mipi->mode);
-#endif
 
 	if (mfd->panel_info.type == MIPI_CMD_PANEL) {
 		if (pinfo->lcd.vsync_enable) {
@@ -347,22 +308,20 @@ static int mipi_dsi_on(struct platform_device *pdev)
 			}
 			mipi_dsi_set_tear_on(mfd);
 		}
-		mipi_dsi_clk_disable();
-		mipi_dsi_ahb_ctrl(0);
-		mipi_dsi_unprepare_clocks();
 	}
 
 #ifdef CONFIG_MSM_BUS_SCALING
 	mdp_bus_scale_update_request(2);
 #endif
 
+	mdp4_overlay_dsi_state_set(ST_DSI_RESUME);
+
 	if (mdp_rev >= MDP_REV_41)
 		mutex_unlock(&mfd->dma->ov_mutex);
 	else
 		up(&mfd->dma->mutex);
 
-        pr_debug("End of %s....:\n", __func__);
-	printk(KERN_INFO"%s is ended.. \n", __func__);
+	pr_debug("%s-:\n", __func__);
 
 	return ret;
 }
@@ -485,6 +444,9 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 
 	if (pdev_list_cnt >= MSM_FB_MAX_DEV_LIST)
 		return -ENOMEM;
+
+	if (!mfd->cont_splash_done)
+		cont_splash_clk_ctrl(1);
 
 	mdp_dev = platform_device_alloc("mdp", pdev->id);
 	if (!mdp_dev)
@@ -620,9 +582,6 @@ static int mipi_dsi_probe(struct platform_device *pdev)
 		goto mipi_dsi_probe_err;
 
 	pdev_list[pdev_list_cnt++] = pdev;
-
-	if (!mfd->cont_splash_done)
-		cont_splash_clk_ctrl(1);
 
 return 0;
 

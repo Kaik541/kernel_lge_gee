@@ -26,16 +26,9 @@
 #define MSMFB_CURSOR _IOW(MSMFB_IOCTL_MAGIC, 130, struct fb_cursor)
 #define MSMFB_SET_LUT _IOW(MSMFB_IOCTL_MAGIC, 131, struct fb_cmap)
 #define MSMFB_HISTOGRAM _IOWR(MSMFB_IOCTL_MAGIC, 132, struct mdp_histogram_data)
-/* 2012-11-29 wonhee.jeong@lge.com this code add to mdp tunning when start DMB in G, GK (apq8064) [S]*/
-/* This source code confirmed by QCT*/
 /* new ioctls's for set/get ccs matrix */
 #define MSMFB_GET_CCS_MATRIX  _IOWR(MSMFB_IOCTL_MAGIC, 133, struct mdp_ccs)
-#ifndef CONFIG_FB_MSM_MDP40  /* Refer to kernel/drivers/video/msm/msm_fb.c */
 #define MSMFB_SET_CCS_MATRIX  _IOW(MSMFB_IOCTL_MAGIC, 134, struct mdp_ccs)
-#else
-#define MSMFB_SET_CCS_MATRIX  _IOW(MSMFB_IOCTL_MAGIC, 134, struct mdp_csc)
-#endif
-/* 2012-11-29 wonhee.jeong@lge.com this code add to mdp tunning when start DMB in G, GK (apq8064) [E]*/
 #define MSMFB_OVERLAY_SET       _IOWR(MSMFB_IOCTL_MAGIC, 135, \
 						struct mdp_overlay)
 #define MSMFB_OVERLAY_UNSET     _IOW(MSMFB_IOCTL_MAGIC, 136, unsigned int)
@@ -77,8 +70,10 @@
 #define MSMFB_MDP_PP _IOWR(MSMFB_IOCTL_MAGIC, 156, struct msmfb_mdp_pp)
 #define MSMFB_OVERLAY_VSYNC_CTRL _IOW(MSMFB_IOCTL_MAGIC, 160, unsigned int)
 #define MSMFB_VSYNC_CTRL  _IOW(MSMFB_IOCTL_MAGIC, 161, unsigned int)
-#define MSMFB_METADATA_SET  _IOW(MSMFB_IOCTL_MAGIC, 162, struct msmfb_metadata)
-#define MSMFB_OVERLAY_COMMIT      _IO(MSMFB_IOCTL_MAGIC, 163)
+#define MSMFB_BUFFER_SYNC  _IOW(MSMFB_IOCTL_MAGIC, 162, struct mdp_buf_sync)
+
+#define MSMFB_DISPLAY_COMMIT      _IOW(MSMFB_IOCTL_MAGIC, 164, \
+						struct mdp_display_commit)
 
 #define FB_TYPE_3D_PANEL 0x10101010
 #define MDP_IMGTYPE2_START 0x10000
@@ -115,8 +110,6 @@ enum {
 	MDP_YCRCB_H1V1,   /* YCrCb interleave */
 	MDP_YCBCR_H1V1,   /* YCbCr interleave */
 	MDP_BGR_565,      /* BGR 565 planer */
-	MDP_BGR_888,      /* BGR 888 */
-	MDP_Y_CBCR_H2V2_VENUS,
 	MDP_IMGTYPE_LIMIT,
 	MDP_RGB_BORDERFILL,	/* border fill pipe */
 	MDP_FB_FORMAT = MDP_IMGTYPE2_START,    /* framebuffer format */
@@ -364,14 +357,11 @@ struct mdp_histogram {
 
 /*
 
-	mdp_block_type defines the identifiers for pipes in MDP 4.3 and up
+	mdp_block_type defines the identifiers for each of pipes in MDP 4.3
 
 	MDP_BLOCK_RESERVED is provided for backward compatibility and is
 	deprecated. It corresponds to DMA_P. So MDP_BLOCK_DMA_P should be used
 	instead.
-
-	MDP_LOGICAL_BLOCK_DISP_0 identifies the display pipe which fb0 uses,
-	same for others.
 
 */
 
@@ -387,9 +377,6 @@ enum {
 	MDP_BLOCK_DMA_S,
 	MDP_BLOCK_DMA_E,
 	MDP_BLOCK_OVERLAY_2,
-	MDP_LOGICAL_BLOCK_DISP_0 = 0x1000,
-	MDP_LOGICAL_BLOCK_DISP_1,
-	MDP_LOGICAL_BLOCK_DISP_2,
 	MDP_BLOCK_MAX,
 };
 
@@ -502,23 +489,32 @@ struct msmfb_mdp_pp {
 	} data;
 };
 
-enum {
-	metadata_op_none,
-	metadata_op_base_blend,
-	metadata_op_max
-};
+#define MDP_MAX_FENCE_FD	10
+#define MDP_BUF_SYNC_FLAG_WAIT	1
 
-struct mdp_blend_cfg {
-	uint32_t is_premultiplied;
-};
-
-struct msmfb_metadata {
-	uint32_t op;
+struct mdp_buf_sync {
 	uint32_t flags;
-	union {
-		struct mdp_blend_cfg blend_cfg;
-	} data;
+	uint32_t acq_fen_fd_cnt;
+	int *acq_fen_fd;
+	int *rel_fen_fd;
 };
+
+struct mdp_buf_fence {
+	uint32_t flags;
+	uint32_t acq_fen_fd_cnt;
+	int acq_fen_fd[MDP_MAX_FENCE_FD];
+	int rel_fen_fd[MDP_MAX_FENCE_FD];
+};
+
+#define MDP_DISPLAY_COMMIT_OVERLAY 0x00000001
+
+struct mdp_display_commit {
+	uint32_t flags;
+	uint32_t wait_for_finish;
+	struct fb_var_screeninfo var;
+	struct mdp_buf_fence buf_fence;
+};
+
 struct mdp_page_protection {
 	uint32_t page_protection;
 };
@@ -546,7 +542,7 @@ enum {
 };
 
 #ifdef __KERNEL__
-int msm_fb_get_iommu_domain(void);
+
 /* get the framebuffer physical address information */
 int get_fb_phys_info(unsigned long *start, unsigned long *len, int fb_num,
 	int subsys_id);
