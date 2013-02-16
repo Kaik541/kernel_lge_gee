@@ -35,6 +35,7 @@ obj-$(CONFIG_MACH_APQ8064_J1A) += board-j1.o \
 	board-j1-nfc.o
 
 obj-$(CONFIG_MACH_APQ8064_J1SP) += board-j1.o \
+        board-j1-camera.o \
 	board-j1-display.o \
 	board-j1-gpiomux.o \
 	board-j1-gpu.o \

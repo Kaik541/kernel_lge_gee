@@ -43,7 +43,12 @@ allowed_warnings = set([
     "alignment.c:327",
     "mmu.c:602",
     "return_address.c:62",
-    "hci_core.c:635"
+    "hci_core.c:635",
+    "camera.h:709",
+    "msm_actuator.h:16",
+    "msm_actuator.c:14",
+    "vcap_vc.c:18",
+    "vcap_vc.c:19"
  ])
 
 # Capture the name of the object file, can find it.

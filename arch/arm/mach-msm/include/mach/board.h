@@ -65,6 +65,20 @@ struct msm_camera_device_platform_data {
 	struct msm_bus_scale_pdata *cam_bus_scale_table;
 };
 
+enum msm_camera_csi_data_format {
+        CSI_8BIT,
+        CSI_10BIT,
+        CSI_12BIT,
+};
+
+struct msm_camera_csi_params {
+        enum msm_camera_csi_data_format data_format;
+        uint8_t lane_cnt;
+        uint8_t lane_assign;
+        uint8_t settle_cnt;
+        uint8_t dpcm_scheme;
+};
+
 #ifdef CONFIG_SENSORS_MT9T013
 struct msm_camera_legacy_device_platform_data {
 	int sensor_reset;
@@ -166,6 +180,21 @@ enum msm_camera_type {
 enum msm_sensor_type {
 	BAYER_SENSOR,
 	YUV_SENSOR,
+};
+
+enum camera_vreg_type {
+        REG_LDO,
+        REG_VS,
+        REG_GPIO,
+        REG_MAX
+};
+
+struct camera_vreg_t {
+        const char *reg_name;
+        enum camera_vreg_type type;
+        int min_voltage;
+        int max_voltage;
+        int op_mode;
 };
 
 struct msm_gpio_set_tbl {
@@ -382,73 +411,41 @@ enum msm_mdp_hw_revision {
 };
 
 struct msm_panel_common_pdata {
-	uintptr_t hw_revision_addr;
-	int gpio;
-	bool bl_lock;
-	spinlock_t bl_spinlock;
-	int (*backlight_level)(int level, int max, int min);
-	int (*pmic_backlight)(int level);
-	int (*rotate_panel)(void);
-	int (*backlight) (int level, int mode);
-	int (*panel_num)(void);
-	void (*panel_config_gpio)(int);
-	int (*vga_switch)(int select_vga);
-	int *gpio_num;
-	u32 mdp_max_clk;
+        uintptr_t hw_revision_addr;
+        int gpio;
+        bool bl_lock;
+        spinlock_t bl_spinlock;
+        int (*backlight_level)(int level, int max, int min);
+        int (*pmic_backlight)(int level);
+        int (*rotate_panel)(void);
+        int (*backlight) (int level, int mode);
+        int (*panel_num)(void);
+        void (*panel_config_gpio)(int);
+        int (*vga_switch)(int select_vga);
+        int *gpio_num;
+        u32 mdp_max_clk;
 #ifdef CONFIG_MSM_BUS_SCALING
-	struct msm_bus_scale_pdata *mdp_bus_scale_table;
+        struct msm_bus_scale_pdata *mdp_bus_scale_table;
 #endif
-	int mdp_rev;
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT)
-	void *power_on_set_1;
-	void *power_on_set_2;
-	void *power_on_set_3;
-	void *power_on_set_ief;
-	void *power_off_set_ief;
-
-	ssize_t power_on_set_size_1;
-	ssize_t power_on_set_size_2;
-	ssize_t power_on_set_size_3;
-	ssize_t power_on_set_ief_size;
-	ssize_t power_off_set_ief_size;	
-#elif defined(CONFIG_FB_MSM_MIPI_HITACHI_VIDEO_HD_PT)
-	void *power_on_set_1;
-	ssize_t power_on_set_size_1;
-#elif defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT) \
-       || defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT_PANEL)
-    void *power_on_set_1_old;
-    ssize_t power_on_set_size_1_old; 
-	void *power_on_set_1;
-	ssize_t power_on_set_size_1;
-	void *power_on_set_2;
-	ssize_t power_on_set_size_2;
-#if defined(CONFIG_LGE_R63311_BACKLIGHT_CABC)
-	void *power_on_set_3;
-    ssize_t power_on_set_size_3;
-#endif
-#if defined(CONFIG_LGIT_COLOR_ENGINE_SWITCH)
-	void *color_engine_on;
-	ssize_t color_engine_on_size;
-	void *color_engine_off;
-	ssize_t color_engine_off_size;
-#endif //CONFIG_LGIT_COLOR_ENGINE_SWITCH
-#if defined(CONFIG_LGE_R63311_BACKLIGHT_CABC)
-    void *cabc_off;
-    ssize_t cabc_off_size;
-#endif // CABC apply
-#endif
-	void *power_off_set_1;
-	void *power_off_set_2;
-	ssize_t power_off_set_size_1;
-	ssize_t power_off_set_size_2;
-	u32 ov0_wb_size;  /* overlay0 writeback size */
-	u32 ov1_wb_size;  /* overlay1 writeback size */
-	u32 mem_hid;
-	char cont_splash_enabled;
-	char mdp_iommu_split_domain;
+        int mdp_rev;
+        void *power_on_set_1;
+        void *power_on_set_2;
+        void *power_on_set_3;
+        ssize_t power_on_set_size_1;
+        ssize_t power_on_set_size_2;
+        ssize_t power_on_set_size_3;
+        void *power_off_set_1;
+        void *power_off_set_2;
+        ssize_t power_off_set_size_1;
+        ssize_t power_off_set_size_2;
+        u32 ov0_wb_size;  /* overlay0 writeback size */
+        u32 ov1_wb_size;  /* overlay1 writeback size */
+        u32 mem_hid;
+        char cont_splash_enabled;
+        char mdp_iommu_split_domain;
+        void (*bl_pwm_disable)(void);
+        int (*bl_on_status)(void);
 };
-
-
 
 struct lcdc_platform_data {
 	int (*lcdc_gpio_config)(int on);

@@ -1911,15 +1911,15 @@ static struct msm_panel_common_pdata mipi_lgit_pdata = {
 	.power_on_set_2 = lgit_power_on_set_2,
 	.power_on_set_3 = lgit_power_on_set_3,
 
-	.power_on_set_ief = lgit_ief_on_set,
-	.power_off_set_ief = lgit_ief_off_set,
+//	.power_on_set_ief = lgit_ief_on_set,
+//	.power_off_set_ief = lgit_ief_off_set,
 
 	.power_on_set_size_1 = ARRAY_SIZE(lgit_power_on_set_1),
 	.power_on_set_size_2 = ARRAY_SIZE(lgit_power_on_set_2),
 	.power_on_set_size_3 = ARRAY_SIZE(lgit_power_on_set_3),
 
-	.power_on_set_ief_size = ARRAY_SIZE(lgit_ief_on_set),
-	.power_off_set_ief_size = ARRAY_SIZE(lgit_ief_off_set),
+//	.power_on_set_ief_size = ARRAY_SIZE(lgit_ief_on_set),
+//	.power_off_set_ief_size = ARRAY_SIZE(lgit_ief_off_set),
 
 	.power_off_set_1 = lgit_power_off_set_1,
 	.power_off_set_2 = lgit_power_off_set_2,

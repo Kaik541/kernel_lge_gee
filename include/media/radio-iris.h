@@ -210,9 +210,8 @@ void radio_hci_event_packet(struct radio_hci_dev *hdev, struct sk_buff *skb);
 #define HCI_FM_GET_DET_CH_TH_CMD 16
 
 /* Defines for FM TX*/
-#define TX_PS_DATA_LENGTH 108
+#define TX_PS_DATA_LENGTH 96
 #define TX_RT_DATA_LENGTH 64
-#define PS_STRING_LEN     9
 
 /* ----- HCI Command request ----- */
 struct hci_fm_recv_conf_req {
@@ -239,7 +238,7 @@ struct hci_fm_tx_ps {
 	__u16	pi;
 	__u8	pty;
 	__u8	ps_repeatcount;
-	__u8	ps_num;
+	__u8	ps_len;
 	__u8    ps_data[TX_PS_DATA_LENGTH];
 } __packed;
 
@@ -247,7 +246,7 @@ struct hci_fm_tx_rt {
 	__u8    rt_control;
 	__u16	pi;
 	__u8	pty;
-	__u8	rt_len;
+	__u8	ps_len;
 	__u8    rt_data[TX_RT_DATA_LENGTH];
 } __packed;
 
@@ -660,7 +659,7 @@ enum iris_region_t {
 	IRIS_REGION_OTHER
 };
 
-#define STD_BUF_SIZE        (128)
+#define STD_BUF_SIZE        (64)
 
 enum iris_buf_t {
 	IRIS_BUF_SRCH_LIST,
@@ -746,7 +745,7 @@ enum spur_entry_levels {
 /* constants */
 #define  RDS_BLOCKS_NUM	(4)
 #define BYTES_PER_BLOCK	(3)
-#define MAX_PS_LENGTH	(108)
+#define MAX_PS_LENGTH	(96)
 #define MAX_RT_LENGTH	(64)
 #define RDS_GRP_CNTR_LEN (36)
 #define RX_RT_DATA_LENGTH (63)

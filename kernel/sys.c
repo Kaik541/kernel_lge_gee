@@ -332,14 +332,6 @@ void kernel_restart_prepare(char *cmd)
 	system_state = SYSTEM_RESTART;
 	usermodehelper_disable();
 	device_shutdown();
-#ifdef CONFIG_MACH_LGE
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT) || defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT)
-	mipi_lgit_lcd_off_for_shutdown();
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT)
-	mipi_dsi_panel_power_off_shutdown();
-#endif
-#endif
-#endif
 	syscore_shutdown();
 }
 
@@ -401,14 +393,6 @@ static void kernel_shutdown_prepare(enum system_states state)
 	system_state = state;
 	usermodehelper_disable();
 	device_shutdown();
-#ifdef CONFIG_MACH_LGE
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT) || defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_WXGA_PT)
-	mipi_lgit_lcd_off_for_shutdown();
-#if defined(CONFIG_FB_MSM_MIPI_LGIT_VIDEO_FHD_INVERSE_PT)
-	mipi_dsi_panel_power_off_shutdown();
-#endif
-#endif
-#endif
 }
 /**
  *	kernel_halt - halt the system
