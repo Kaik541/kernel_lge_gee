@@ -28,15 +28,6 @@
 #include "msm_cam_server.h"
 #include "msm_vfe32.h"
 
-//Start LGE_BSP_CAMERA::youngwook.song@lge.com WBT Error
-#define BUFFER_SIZE_10 10
-//End LGE_BSP_CAMERA::youngwook.song@lge.com WBT Error
-//Start LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
-#include <linux/syscalls.h>
-int BrightnessDownRatio = 3;
-int CurrentBrightnessValue;
-int ControlBrightnessValue;
-//End LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
 atomic_t irq_cnt;
 
 #define VFE32_AXI_OFFSET 0x0050
@@ -146,9 +137,7 @@ static struct vfe32_cmd_type vfe32_cmd[] = {
 		{VFE_CMD_EPOCH2_ACK},
 		{VFE_CMD_START_RECORDING},
 /*60*/	{VFE_CMD_STOP_RECORDING},
-//Start LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
-		{VFE_CMD_STOP_RECORDING_DONE},  //		{VFE_CMD_DUMMY_5},
-//End  LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
+		{VFE_CMD_DUMMY_5},
 		{VFE_CMD_DUMMY_6},
 		{VFE_CMD_CAPTURE, V32_CAPTURE_LEN, 0xFF},
 		{VFE_CMD_DUMMY_7},
@@ -243,26 +232,11 @@ static struct vfe32_cmd_type vfe32_cmd[] = {
 		{VFE_CMD_STATS_UNREGBUF},
 		{VFE_CMD_STATS_BG_START, V32_STATS_BG_LEN, V32_STATS_BG_OFF},
 		{VFE_CMD_STATS_BG_STOP},
-/*145*/	{VFE_CMD_STATS_BF_START, V32_STATS_BF_LEN, V32_STATS_BF_OFF},
-		{VFE_CMD_STATS_BF_STOP},
+		{VFE_CMD_STATS_BF_START, V32_STATS_BF_LEN, V32_STATS_BF_OFF},
+/*145*/ {VFE_CMD_STATS_BF_STOP},
 		{VFE_CMD_STATS_BHIST_START, V32_STATS_BHIST_LEN,
 			V32_STATS_BHIST_OFF},
-		{VFE_CMD_STATS_BHIST_STOP},
-		{VFE_CMD_RESET_2},
-/*150*/	{VFE_CMD_FOV_ENC_CFG},
-		{VFE_CMD_FOV_VIEW_CFG},
-		{VFE_CMD_FOV_ENC_UPDATE},
-		{VFE_CMD_FOV_VIEW_UPDATE},
-		{VFE_CMD_SCALER_ENC_CFG},
-/*155*/	{VFE_CMD_SCALER_VIEW_CFG},
-		{VFE_CMD_SCALER_ENC_UPDATE},
-		{VFE_CMD_SCALER_VIEW_UPDATE},
-		{VFE_CMD_COLORXFORM_ENC_CFG},
-		{VFE_CMD_COLORXFORM_VIEW_CFG},
-/*160*/	{VFE_CMD_COLORXFORM_ENC_UPDATE},
-		{VFE_CMD_COLORXFORM_VIEW_UPDATE},
-		{VFE_CMD_TEST_GEN_CFG},
-		{VFE_CMD_STOP_RECORDING_DONE},
+/*147*/	{VFE_CMD_STATS_BHIST_STOP},
 };
 
 uint32_t vfe32_AXI_WM_CFG[] = {
@@ -425,21 +399,7 @@ static const char * const vfe32_general_cmd[] = {
 	"STATS_BF_STOP",
 	"STATS_BHIST_START",
 	"STATS_BHIST_STOP",
-	"VFE_CMD_RESET_2",
-	"VFE_CMD_FOV_ENC_CFG",
-	"VFE_CMD_FOV_VIEW_CFG",
-	"VFE_CMD_FOV_ENC_UPDATE",
-	"VFE_CMD_FOV_VIEW_UPDATE",
-	"VFE_CMD_SCALER_ENC_CFG",
-	"VFE_CMD_SCALER_VIEW_CFG",
-	"VFE_CMD_SCALER_ENC_UPDATE",
-	"VFE_CMD_SCALER_VIEW_UPDATE",
-	"VFE_CMD_COLORXFORM_ENC_CFG",
-	"VFE_CMD_COLORXFORM_VIEW_CFG",
-	"VFE_CMD_COLORXFORM_ENC_UPDATE",
-	"VFE_CMD_COLORXFORM_VIEW_UPDATE",
-	"VFE_CMD_TEST_GEN_CFG",
-	"VFE_CMD_STOP_RECORDING_DONE",
+	"RESET_2",
 };
 
 uint8_t vfe32_use_bayer_stats(struct vfe32_ctrl_type *vfe32_ctrl)
@@ -452,282 +412,36 @@ uint8_t vfe32_use_bayer_stats(struct vfe32_ctrl_type *vfe32_ctrl)
 	}
 }
 
-static void axi_enable_wm_irq(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t irq_mask, irq_comp_mask = 0;
-	uint16_t vfe_output_mode =
-		share_ctrl->outpath.output_mode &
-			~(VFE32_OUTPUT_MODE_TERTIARY1|
-			VFE32_OUTPUT_MODE_TERTIARY2|
-			  VFE32_OUTPUT_MODE_TERTIARY3);
-
-	if (vfe_output_mode)
-		irq_comp_mask =
-		msm_camera_io_r(share_ctrl->vfebase +
-			VFE_IRQ_COMP_MASK);
-	irq_mask = msm_camera_io_r(share_ctrl->vfebase +
-				VFE_IRQ_MASK_0);
-
-	if (share_ctrl->outpath.output_mode &
-			VFE32_OUTPUT_MODE_PRIMARY) {
-		if (share_ctrl->current_mode == VFE_OUTPUTS_RAW)
-			irq_comp_mask |= (
-				0x1 << share_ctrl->outpath.out0.ch0);
-		else
-			irq_comp_mask |= (
-				0x1 << share_ctrl->outpath.out0.ch0 |
-				0x1 << share_ctrl->outpath.out0.ch1);
-		irq_mask |= VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE0_MASK;
-	} else if (share_ctrl->outpath.output_mode &
-			   VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-		irq_comp_mask |= (
-			0x1 << share_ctrl->outpath.out0.ch0 |
-			0x1 << share_ctrl->outpath.out0.ch1 |
-			0x1 << share_ctrl->outpath.out0.ch2);
-		irq_mask |= VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE0_MASK;
-	}
-	if (share_ctrl->outpath.output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY) {
-		irq_comp_mask |= (
-			0x1 << (share_ctrl->outpath.out1.ch0 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch1 + 8));
-		irq_mask |= VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE1_MASK;
-	} else if (share_ctrl->outpath.output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-		irq_comp_mask |= (
-			0x1 << (share_ctrl->outpath.out1.ch0 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch1 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch2 + 8));
-		irq_mask |= VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE1_MASK;
-	}
-
-	if (share_ctrl->outpath.output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY1) {
-		irq_mask |= (0x1 << (share_ctrl->outpath.out2.ch0 +
-			VFE_WM_OFFSET));
-	}
-
-	if (share_ctrl->outpath.output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY2) {
-		irq_mask |= (0x1 << (share_ctrl->outpath.out3.ch0 +
-			VFE_WM_OFFSET));
-	}
-
-	if (share_ctrl->outpath.output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY3) {
-		irq_mask |= (0x1 << (share_ctrl->outpath.out4.ch0 +
-			VFE_WM_OFFSET));
-	}
-
-	msm_camera_io_w(irq_mask, share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-	if (vfe_output_mode)
-		msm_camera_io_w(irq_comp_mask,
-			share_ctrl->vfebase + VFE_IRQ_COMP_MASK);
-}
-
-static void axi_disable_wm_irq(struct vfe_share_ctrl_t *share_ctrl,
-	uint16_t output_mode)
-{
-	uint32_t irq_mask, irq_comp_mask = 0;
-	uint16_t vfe_output_mode =
-		output_mode &
-			~(VFE32_OUTPUT_MODE_TERTIARY1|
-			VFE32_OUTPUT_MODE_TERTIARY2|
-			  VFE32_OUTPUT_MODE_TERTIARY3);
-	if (vfe_output_mode)
-		irq_comp_mask =
-		msm_camera_io_r(share_ctrl->vfebase +
-			VFE_IRQ_COMP_MASK);
-	irq_mask = msm_camera_io_r(share_ctrl->vfebase +
-				VFE_IRQ_MASK_0);
-
-	if (output_mode &
-			VFE32_OUTPUT_MODE_PRIMARY) {
-		irq_comp_mask &= ~(
-			0x1 << share_ctrl->outpath.out0.ch0 |
-			0x1 << share_ctrl->outpath.out0.ch1);
-		irq_mask &= ~VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE0_MASK;
-	} else if (output_mode &
-			   VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-		irq_comp_mask &= ~(
-			0x1 << share_ctrl->outpath.out0.ch0 |
-			0x1 << share_ctrl->outpath.out0.ch1 |
-			0x1 << share_ctrl->outpath.out0.ch2);
-		irq_mask &= ~VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE0_MASK;
-	}
-	if (output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY) {
-		irq_comp_mask &= ~(
-			0x1 << (share_ctrl->outpath.out1.ch0 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch1 + 8));
-		irq_mask &= ~VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE1_MASK;
-	} else if (output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-		irq_comp_mask &= ~(
-			0x1 << (share_ctrl->outpath.out1.ch0 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch1 + 8) |
-			0x1 << (share_ctrl->outpath.out1.ch2 + 8));
-		irq_mask &= ~VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE1_MASK;
-	}
-	if (output_mode &
-			VFE32_OUTPUT_MODE_TERTIARY1) {
-			irq_mask &= ~(0x1 << (share_ctrl->outpath.out2.ch0 +
-				VFE_WM_OFFSET));
-	}
-	if (output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY2) {
-		irq_mask &= ~(0x1 << (share_ctrl->outpath.out3.ch0 +
-			VFE_WM_OFFSET));
-	}
-	if (output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY3) {
-		irq_mask &= ~(0x1 << (share_ctrl->outpath.out4.ch0 +
-			VFE_WM_OFFSET));
-	}
-	msm_camera_io_w(irq_mask, share_ctrl->vfebase +
-				VFE_IRQ_MASK_0);
-	if (vfe_output_mode)
-		msm_camera_io_w(irq_comp_mask,
-			share_ctrl->vfebase + VFE_IRQ_COMP_MASK);
-}
-
-static void axi_enable_irq(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t irq_mask, irq_mask1;
-	uint32_t vfe_mode =
-		share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0 |
-			VFE_OUTPUTS_RDI1 | VFE_OUTPUTS_RDI2);
-
-	if (share_ctrl->axi_ref_cnt == 1) {
-		irq_mask1 =
-			msm_camera_io_r(share_ctrl->vfebase +
-				VFE_IRQ_MASK_1);
-
-		irq_mask1 |= VFE_IMASK_WHILE_STOPPING_1;
-			msm_camera_io_w(irq_mask1, share_ctrl->vfebase +
-				VFE_IRQ_MASK_1);
-	}
-
-	if (share_ctrl->current_mode & (VFE_OUTPUTS_RDI0 |
-		VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2)) {
-		irq_mask1 =
-			msm_camera_io_r(share_ctrl->vfebase +
-				VFE_IRQ_MASK_1);
-
-		if (share_ctrl->current_mode & VFE_OUTPUTS_RDI0)
-			irq_mask1 |= VFE_IRQ_STATUS1_RDI0_REG_UPDATE_MASK;
-
-		if (share_ctrl->current_mode & VFE_OUTPUTS_RDI1)
-			irq_mask1 |= VFE_IRQ_STATUS1_RDI1_REG_UPDATE_MASK;
-
-		if (share_ctrl->current_mode & VFE_OUTPUTS_RDI2) {
-			irq_mask1 |= VFE_IRQ_STATUS1_RDI2_REG_UPDATE_MASK;
-        }
-
-		msm_camera_io_w(irq_mask1, share_ctrl->vfebase +
-			VFE_IRQ_MASK_1);
-	}
-
-	if (vfe_mode) {
-		irq_mask =
-		msm_camera_io_r(share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-		irq_mask |= 0x00000021;
-		if (share_ctrl->stats_comp)
-			irq_mask |= VFE_IRQ_STATUS0_STATS_COMPOSIT_MASK;
-		else
-			irq_mask |= 0x000FE000;
-		msm_camera_io_w(irq_mask, share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-		atomic_set(&share_ctrl->vstate, 1);
-	}
-	atomic_set(&share_ctrl->handle_common_irq, 1);
-}
-
-static void axi_clear_all_interrupts(struct vfe_share_ctrl_t *share_ctrl)
-{
-	atomic_set(&share_ctrl->handle_common_irq, 0);
-	msm_camera_io_w(VFE_DISABLE_ALL_IRQS,
-		share_ctrl->vfebase + VFE_IRQ_MASK_0);
-	msm_camera_io_w(VFE_DISABLE_ALL_IRQS,
-		share_ctrl->vfebase + VFE_IRQ_MASK_1);
-
-	/* clear all pending interrupts*/
-	msm_camera_io_w(VFE_CLEAR_ALL_IRQS,
-		share_ctrl->vfebase + VFE_IRQ_CLEAR_0);
-	msm_camera_io_w(VFE_CLEAR_ALL_IRQS,
-		share_ctrl->vfebase + VFE_IRQ_CLEAR_1);
-	/* Ensure the write order while writing
-	*to the command register using the barrier */
-	msm_camera_io_w_mb(1,
-		share_ctrl->vfebase + VFE_IRQ_CMD);
-}
-
-static void axi_disable_irq(struct vfe_share_ctrl_t *share_ctrl,
-	uint32_t mode)
+static void axi_disable_irq(struct axi_ctrl_t *axi_ctrl)
 {
 
 	/* disable all interrupts.  */
+	msm_camera_io_w(VFE_DISABLE_ALL_IRQS,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
+	msm_camera_io_w(VFE_DISABLE_ALL_IRQS,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
 
-	uint32_t irq_mask = 0, irq_mask1 = 0, clear_mask1 = 0;
-	uint32_t vfe_mode =
-		(mode & ~(VFE_OUTPUTS_RDI0|
-			VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2));
-
-	if (mode & (VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2)) {
-		irq_mask1 =
-			msm_camera_io_r(share_ctrl->vfebase +
-				VFE_IRQ_MASK_1);
-
-		if (mode & VFE_OUTPUTS_RDI0) {
-			irq_mask1 &= ~(VFE_IRQ_STATUS1_RDI0_REG_UPDATE_MASK);
-			clear_mask1 |= VFE_IRQ_STATUS1_RDI0_REG_UPDATE_MASK;
-		}
-
-		if (mode & VFE_OUTPUTS_RDI1) {
-			irq_mask1 &= ~(VFE_IRQ_STATUS1_RDI1_REG_UPDATE_MASK);
-			clear_mask1 |= VFE_IRQ_STATUS1_RDI1_REG_UPDATE_MASK;
-		}
-		if (mode & VFE_OUTPUTS_RDI2) {
-			irq_mask1 &= ~(VFE_IRQ_STATUS1_RDI2_REG_UPDATE_MASK);
-			clear_mask1 |= VFE_IRQ_STATUS1_RDI2_REG_UPDATE_MASK;
-		}
-
-		msm_camera_io_w(irq_mask1, share_ctrl->vfebase +
-			VFE_IRQ_MASK_1);
-		msm_camera_io_w(clear_mask1,
-			share_ctrl->vfebase + VFE_IRQ_CLEAR_1);
-	}
-
-	if (vfe_mode) {
-		atomic_set(&share_ctrl->vstate, 0);
-		irq_mask =
-		msm_camera_io_r(share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-		irq_mask &= ~(0x00000021);
-		if (share_ctrl->stats_comp)
-			irq_mask &= ~(VFE_IRQ_STATUS0_STATS_COMPOSIT_MASK);
-		else
-			irq_mask &= ~0x000FE000;
-		msm_camera_io_w(irq_mask, share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-	}
+	/* clear all pending interrupts*/
+	msm_camera_io_w(VFE_CLEAR_ALL_IRQS,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_CLEAR_0);
+	msm_camera_io_w(VFE_CLEAR_ALL_IRQS,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_CLEAR_1);
+	/* Ensure the write order while writing
+	to the command register using the barrier */
+	msm_camera_io_w_mb(1,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_CMD);
 }
 
 static void vfe32_stop(struct vfe32_ctrl_type *vfe32_ctrl)
 {
 
+	atomic_set(&vfe32_ctrl->share_ctrl->vstate, 0);
 	/* in either continuous or snapshot mode, stop command can be issued
 	 * at any time. stop camif immediately. */
-	if (!vfe32_ctrl->share_ctrl->dual_enabled)
-		msm_camera_io_w_mb(CAMIF_COMMAND_STOP_IMMEDIATELY,
-			vfe32_ctrl->share_ctrl->vfebase + VFE_CAMIF_COMMAND);
-	else
-		msm_camera_io_w(CAMIF_COMMAND_STOP_AT_FRAME_BOUNDARY,
-			vfe32_ctrl->share_ctrl->vfebase + VFE_CAMIF_COMMAND);
+	msm_camera_io_w(CAMIF_COMMAND_STOP_AT_FRAME_BOUNDARY,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_CAMIF_COMMAND);
 	vfe32_ctrl->share_ctrl->operation_mode &=
-		(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
+		~(vfe32_ctrl->share_ctrl->current_mode);
 }
 
 static void vfe32_subdev_notify(int id, int path, uint32_t inst_handle,
@@ -753,7 +467,7 @@ static int vfe32_config_axi(
 {
 	uint32_t *ch_info;
 	uint32_t *axi_cfg = ao+V32_AXI_BUS_FMT_OFF;
-	int vfe_mode = (mode & ~(OUTPUT_TERT1|OUTPUT_TERT2|OUTPUT_TERT3));
+	int vfe_mode = (mode & ~(OUTPUT_TERT1|OUTPUT_TERT2));
 	uint32_t bus_cmd = *axi_cfg;
 	int i;
 
@@ -783,12 +497,6 @@ static int vfe32_config_axi(
 	axi_ctrl->share_ctrl->outpath.out3.ch2 = 0x0000FFFF & *ch_info++;
 	axi_ctrl->share_ctrl->outpath.out3.inst_handle = *ch_info++;
 
-	axi_ctrl->share_ctrl->outpath.out4.ch0 = 0x0000FFFF & *ch_info;
-	axi_ctrl->share_ctrl->outpath.out4.ch1 =
-		0x0000FFFF & (*ch_info++ >> 16);
-	axi_ctrl->share_ctrl->outpath.out4.ch2 = 0x0000FFFF & *ch_info++;
-	axi_ctrl->share_ctrl->outpath.out4.inst_handle = *ch_info++;
-
 	axi_ctrl->share_ctrl->outpath.output_mode = 0;
 
 	if (mode & OUTPUT_TERT1)
@@ -797,16 +505,8 @@ static int vfe32_config_axi(
 	if (mode & OUTPUT_TERT2)
 		axi_ctrl->share_ctrl->outpath.output_mode |=
 			VFE32_OUTPUT_MODE_TERTIARY2;
-	if (mode & OUTPUT_TERT3)
-		axi_ctrl->share_ctrl->outpath.output_mode |=
-			VFE32_OUTPUT_MODE_TERTIARY3;
-	if (mode == OUTPUT_TERT1
-		|| mode == OUTPUT_TERT2
-		|| mode == OUTPUT_TERT3
-		|| mode == (OUTPUT_TERT1|OUTPUT_TERT2)
-		|| mode == (OUTPUT_TERT1|OUTPUT_TERT3)
-		|| mode == (OUTPUT_TERT2|OUTPUT_TERT3)
-		|| mode == (OUTPUT_TERT1|OUTPUT_TERT2|OUTPUT_TERT3))
+	if (mode == OUTPUT_TERT1 || mode == OUTPUT_TERT1
+		|| mode == (OUTPUT_TERT1|OUTPUT_TERT2))
 			goto bus_cfg;
 
 	switch (vfe_mode) {
@@ -850,6 +550,8 @@ bus_cfg:
 		V32_AXI_BUS_CFG_LEN);
 	axi_cfg += V32_AXI_BUS_CFG_LEN/4;
 	for (i = 0; i < ARRAY_SIZE(vfe32_AXI_WM_CFG); i++) {
+		msm_camera_io_w(*axi_cfg,
+			axi_ctrl->share_ctrl->vfebase+vfe32_AXI_WM_CFG[i]);
 		axi_cfg += 3;
 		msm_camera_io_memcpy(
 			axi_ctrl->share_ctrl->vfebase+vfe32_AXI_WM_CFG[i]+12,
@@ -858,59 +560,10 @@ bus_cfg:
 	}
 	msm_camera_io_w(bus_cmd, axi_ctrl->share_ctrl->vfebase +
 					V32_AXI_BUS_CMD_OFF);
-	msm_camera_io_w(*ch_info++,
-		axi_ctrl->share_ctrl->vfebase + VFE_PIXEL_IF_CFG);
-	if (msm_camera_io_r(axi_ctrl->share_ctrl->vfebase +
-		V32_GET_HW_VERSION_OFF) ==
-		VFE33_HW_NUMBER) {
-		msm_camera_io_w(*ch_info++,
-			axi_ctrl->share_ctrl->vfebase + VFE_RDI0_CFG);
-		msm_camera_io_w(*ch_info++,
-			axi_ctrl->share_ctrl->vfebase + VFE_RDI1_CFG);
-	}
 	return 0;
 }
 
 static void axi_reset_internal_variables(
-	struct axi_ctrl_t *axi_ctrl,
-	struct msm_camera_vfe_params_t vfe_params)
-{
-	if (vfe_params.operation_mode & VFE_OUTPUTS_RDI0) {
-		atomic_set(&axi_ctrl->share_ctrl->rdi0_update_ack_pending, 0);
-		axi_ctrl->share_ctrl->rdi0_capture_count = -1;
-		axi_ctrl->share_ctrl->outpath.out2.capture_cnt = -1;
-		axi_ctrl->share_ctrl->rdi0FrameId = 0;
-		axi_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY1;
-		axi_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI0);
-	}
-
-	if (vfe_params.operation_mode & VFE_OUTPUTS_RDI1) {
-		atomic_set(&axi_ctrl->share_ctrl->rdi1_update_ack_pending, 0);
-		axi_ctrl->share_ctrl->rdi1_capture_count = -1;
-		axi_ctrl->share_ctrl->outpath.out3.capture_cnt = -1;
-		axi_ctrl->share_ctrl->rdi1FrameId = 0;
-		axi_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY2;
-		axi_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI1);
-	}
-
-	if (vfe_params.operation_mode & VFE_OUTPUTS_RDI2) {
-		atomic_set(&axi_ctrl->share_ctrl->rdi2_update_ack_pending, 0);
-		axi_ctrl->share_ctrl->rdi2_capture_count = -1;
-		axi_ctrl->share_ctrl->outpath.out4.capture_cnt = -1;
-		axi_ctrl->share_ctrl->rdi2FrameId = 0;
-		axi_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY3;
-		axi_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI2);
-	}
-
-}
-
-static void axi_global_reset_internal_variables(
 	struct axi_ctrl_t *axi_ctrl)
 {
 	unsigned long flags;
@@ -932,8 +585,6 @@ static void axi_global_reset_internal_variables(
 	axi_ctrl->share_ctrl->liveshot_state = VFE_STATE_IDLE;
 
 	atomic_set(&axi_ctrl->share_ctrl->vstate, 0);
-	atomic_set(&axi_ctrl->share_ctrl->handle_common_irq, 0);
-	atomic_set(&axi_ctrl->share_ctrl->pix0_update_ack_pending, 0);
 	atomic_set(&axi_ctrl->share_ctrl->rdi0_update_ack_pending, 0);
 	atomic_set(&axi_ctrl->share_ctrl->rdi1_update_ack_pending, 0);
 	atomic_set(&axi_ctrl->share_ctrl->rdi2_update_ack_pending, 0);
@@ -942,24 +593,41 @@ static void axi_global_reset_internal_variables(
 	axi_ctrl->share_ctrl->operation_mode = 0;
 	axi_ctrl->share_ctrl->current_mode = 0;
 	axi_ctrl->share_ctrl->outpath.output_mode = 0;
-	axi_ctrl->share_ctrl->comp_output_mode = 0;
 	axi_ctrl->share_ctrl->vfe_capture_count = 0;
-	axi_ctrl->share_ctrl->rdi0_capture_count = -1;
-	axi_ctrl->share_ctrl->rdi1_capture_count = -1;
-	axi_ctrl->share_ctrl->rdi2_capture_count = -1;
-	axi_ctrl->share_ctrl->outpath.out0.capture_cnt = -1;
-	axi_ctrl->share_ctrl->outpath.out1.capture_cnt = -1;
-	axi_ctrl->share_ctrl->outpath.out2.capture_cnt = -1;
-	axi_ctrl->share_ctrl->outpath.out3.capture_cnt = -1;
-	axi_ctrl->share_ctrl->outpath.out4.capture_cnt = -1;
 
 	/* this is unsigned 32 bit integer. */
 	axi_ctrl->share_ctrl->vfeFrameId = 0;
-	axi_ctrl->share_ctrl->rdi0FrameId = 0;
-	axi_ctrl->share_ctrl->rdi1FrameId = 0;
-	axi_ctrl->share_ctrl->rdi2FrameId = 0;
 }
 
+static void vfe32_reset_internal_variables(
+	struct vfe32_ctrl_type *vfe32_ctrl)
+{
+	/* Stats control variables. */
+	memset(&(vfe32_ctrl->afbfStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->awbStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->aecbgStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->bhistStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->ihistStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->rsStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	memset(&(vfe32_ctrl->csStatsControl), 0,
+		sizeof(struct vfe_stats_control));
+
+	vfe32_ctrl->frame_skip_cnt = 31;
+	vfe32_ctrl->frame_skip_pattern = 0xffffffff;
+	vfe32_ctrl->snapshot_frame_cnt = 0;
+}
 
 static void vfe32_program_dmi_cfg(
 	enum VFE32_DMI_RAM_SEL bankSel,
@@ -1017,180 +685,9 @@ static void vfe32_reset_dmi_tables(
 	vfe32_program_dmi_cfg(NO_MEM_SELECTED, vfe32_ctrl);
 }
 
-static void vfe32_set_default_reg_values(
-	struct vfe32_ctrl_type *vfe32_ctrl)
+static int axi_reset(struct axi_ctrl_t *axi_ctrl)
 {
-	msm_camera_io_w(0x800080,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_DEMUX_GAIN_0);
-	msm_camera_io_w(0x800080,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_DEMUX_GAIN_1);
-	/* What value should we program CGC_OVERRIDE to? */
-	msm_camera_io_w(0xFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_CGC_OVERRIDE);
-
-	/* default frame drop period and pattern */
-	msm_camera_io_w(0x1f,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_Y_CFG);
-	msm_camera_io_w(0x1f,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_CBCR_CFG);
-	msm_camera_io_w(0xFFFFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_Y_PATTERN);
-	msm_camera_io_w(0xFFFFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase +
-		VFE_FRAMEDROP_ENC_CBCR_PATTERN);
-	msm_camera_io_w(0x1f,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_Y);
-	msm_camera_io_w(0x1f,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_CBCR);
-	msm_camera_io_w(0xFFFFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_Y_PATTERN);
-	msm_camera_io_w(0xFFFFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase +
-		VFE_FRAMEDROP_VIEW_CBCR_PATTERN);
-	msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase + VFE_CLAMP_MIN);
-	msm_camera_io_w(0xFFFFFF,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_CLAMP_MAX);
-
-	/* stats UB config */
-	CDBG("%s: Use bayer stats = %d\n", __func__,
-		 vfe32_use_bayer_stats(vfe32_ctrl));
-	if (!vfe32_use_bayer_stats(vfe32_ctrl)) {
-		msm_camera_io_w(0x3980007,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_AEC_BG_UB_CFG);
-		msm_camera_io_w(0x3A00007,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_AF_BF_UB_CFG);
-		msm_camera_io_w(0x3A8000F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_AWB_UB_CFG);
-		msm_camera_io_w(0x3B80007,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_RS_UB_CFG);
-		msm_camera_io_w(0x3C0001F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_CS_UB_CFG);
-		msm_camera_io_w(0x3E0001F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_HIST_UB_CFG);
-	} else {
-		msm_camera_io_w(0x350001F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_HIST_UB_CFG);
-		msm_camera_io_w(0x370002F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_AEC_BG_UB_CFG);
-		msm_camera_io_w(0x3A0002F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_AF_BF_UB_CFG);
-		msm_camera_io_w(0x3D00007,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_RS_UB_CFG);
-		msm_camera_io_w(0x3D8001F,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_CS_UB_CFG);
-		msm_camera_io_w(0x3F80007,
-			vfe32_ctrl->share_ctrl->vfebase +
-				VFE_BUS_STATS_SKIN_BHIST_UB_CFG);
-	}
-	vfe32_reset_dmi_tables(vfe32_ctrl);
-}
-
-static void vfe32_reset_internal_variables(
-	struct vfe32_ctrl_type *vfe32_ctrl)
-{
-	unsigned long flags;
-	spin_lock_irqsave(&vfe32_ctrl->share_ctrl->update_ack_lock,
-		flags);
-	vfe32_ctrl->share_ctrl->update_ack_pending = FALSE;
-	spin_unlock_irqrestore(&vfe32_ctrl->share_ctrl->update_ack_lock,
-		flags);
-	vfe32_ctrl->share_ctrl->vfe_capture_count = 0;
-	/* this is unsigned 32 bit integer. */
-	vfe32_ctrl->share_ctrl->vfeFrameId = 0;
-	vfe32_ctrl->share_ctrl->update_counter = 0;
-
-	/* Stats control variables. */
-	memset(&(vfe32_ctrl->afbfStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->awbStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->aecbgStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->bhistStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->ihistStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->rsStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-
-	memset(&(vfe32_ctrl->csStatsControl), 0,
-		sizeof(struct vfe_stats_control));
-	vfe32_ctrl->share_ctrl->outpath.out0.capture_cnt = -1;
-	vfe32_ctrl->share_ctrl->outpath.out1.capture_cnt = -1;
-	vfe32_ctrl->share_ctrl->recording_state = VFE_STATE_IDLE;
-	vfe32_ctrl->share_ctrl->liveshot_state = VFE_STATE_IDLE;
-
-	atomic_set(&vfe32_ctrl->share_ctrl->vstate, 0);
-	atomic_set(&vfe32_ctrl->share_ctrl->pix0_update_ack_pending, 0);
-
-	vfe32_ctrl->frame_skip_cnt = 31;
-	vfe32_ctrl->frame_skip_pattern = 0xffffffff;
-	vfe32_ctrl->snapshot_frame_cnt = 0;
-	vfe32_set_default_reg_values(vfe32_ctrl);
-}
-
-
-static int vfe32_reset(struct vfe32_ctrl_type *vfe32_ctrl)
-{
-	uint32_t irq_mask1, irq_mask;
-	atomic_set(&vfe32_ctrl->share_ctrl->vstate, 0);
-	msm_camera_io_w(VFE_MODULE_RESET_CMD,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_MODULE_RESET);
-	msm_camera_io_w(0,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_MODULE_RESET);
-
-	irq_mask =
-		msm_camera_io_r(vfe32_ctrl->share_ctrl->vfebase +
-			VFE_IRQ_MASK_0);
-	irq_mask &= ~(0x000FE021|VFE_IRQ_STATUS0_STATS_COMPOSIT_MASK);
-
-	msm_camera_io_w(irq_mask, vfe32_ctrl->share_ctrl->vfebase +
-		VFE_IRQ_MASK_0);
-	vfe32_ctrl->share_ctrl->operation_mode &=
-		(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
-	vfe32_ctrl->share_ctrl->comp_output_mode &=
-			(VFE32_OUTPUT_MODE_TERTIARY1|
-			VFE32_OUTPUT_MODE_TERTIARY2|
-			VFE32_OUTPUT_MODE_TERTIARY3);
-
-	/* enable reset_ack interrupt.  */
-	irq_mask1 = msm_camera_io_r(
-		vfe32_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
-	irq_mask1 |= VFE_IMASK_WHILE_STOPPING_1;
-	msm_camera_io_w(irq_mask1,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
-	msm_camera_io_w_mb(VFE_ONLY_RESET_CMD,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_GLOBAL_RESET);
-
-	return wait_for_completion_interruptible(
-			&vfe32_ctrl->share_ctrl->reset_complete);
-}
-
-static int axi_reset(struct axi_ctrl_t *axi_ctrl,
-	struct msm_camera_vfe_params_t vfe_params)
-{
-	int rc = 0;
-	if (vfe_params.skip_reset) {
-		axi_reset_internal_variables(axi_ctrl, vfe_params);
-		return rc;
-	}
-	axi_global_reset_internal_variables(axi_ctrl);
+	axi_reset_internal_variables(axi_ctrl);
 	/* disable all interrupts.  vfeImaskLocal is also reset to 0
 	* to begin with. */
 	msm_camera_io_w(VFE_DISABLE_ALL_IRQS,
@@ -1232,6 +729,7 @@ static int vfe32_operation_config(uint32_t *cmd,
 {
 	uint32_t *p = cmd;
 
+	vfe32_ctrl->share_ctrl->operation_mode = *p;
 	vfe32_ctrl->share_ctrl->stats_comp = *(++p);
 	vfe32_ctrl->hfr_mode = *(++p);
 
@@ -1239,6 +737,19 @@ static int vfe32_operation_config(uint32_t *cmd,
 		vfe32_ctrl->share_ctrl->vfebase + VFE_CFG);
 	msm_camera_io_w(*(++p),
 		vfe32_ctrl->share_ctrl->vfebase + VFE_MODULE_CFG);
+	msm_camera_io_w(*(++p),
+		vfe32_ctrl->share_ctrl->vfebase + VFE_PIXEL_IF_CFG);
+	if (msm_camera_io_r(vfe32_ctrl->share_ctrl->vfebase +
+		V32_GET_HW_VERSION_OFF) ==
+		VFE33_HW_NUMBER) {
+		msm_camera_io_w(*(++p),
+			vfe32_ctrl->share_ctrl->vfebase + VFE_RDI0_CFG);
+		msm_camera_io_w(*(++p),
+			vfe32_ctrl->share_ctrl->vfebase + VFE_RDI1_CFG);
+	}  else {
+		++p;
+		++p;
+	}
 	msm_camera_io_w(*(++p),
 		vfe32_ctrl->share_ctrl->vfebase + VFE_REALIGN_BUF);
 	msm_camera_io_w(*(++p),
@@ -1291,7 +802,7 @@ static unsigned long vfe32_stats_flush_enqueue(
 		stats_buf = &bufq->bufs[i];
 		rc = vfe32_ctrl->stats_ops.enqueue_buf(
 				vfe32_ctrl->stats_ops.stats_ctrl,
-				&(stats_buf->info), NULL, -1);
+				&(stats_buf->info), NULL);
 		if (rc < 0) {
 			pr_err("%s: dq stats buf (type = %d) err = %d",
 				 __func__, stats_type, rc);
@@ -1304,7 +815,7 @@ static unsigned long vfe32_stats_flush_enqueue(
 
 static unsigned long vfe32_stats_unregbuf(
 	struct vfe32_ctrl_type *vfe32_ctrl,
-	struct msm_stats_reqbuf *req_buf, int domain_num)
+	struct msm_stats_reqbuf *req_buf)
 {
 	int i = 0, rc = 0;
 
@@ -1312,7 +823,7 @@ static unsigned long vfe32_stats_unregbuf(
 		rc = vfe32_ctrl->stats_ops.buf_unprepare(
 			vfe32_ctrl->stats_ops.stats_ctrl,
 			req_buf->stats_type, i,
-			vfe32_ctrl->stats_ops.client, domain_num);
+			vfe32_ctrl->stats_ops.client);
 		if (rc < 0) {
 			pr_err("%s: unreg stats buf (type = %d) err = %d",
 				__func__, req_buf->stats_type, rc);
@@ -1550,18 +1061,72 @@ static int vfe_stats_cs_buf_init(
 	return 0;
 }
 
-static void vfe32_start_common(
-	struct msm_cam_media_controller *pmctl,  /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
-	struct vfe32_ctrl_type *vfe32_ctrl)
+static void vfe32_start_common(struct vfe32_ctrl_type *vfe32_ctrl)
 {
-	pmctl->hardware_running = 1; /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+	uint32_t irq_mask = 0x00E00021, irq_mask1, reg_update;
+	uint16_t vfe_operation_mode =
+		vfe32_ctrl->share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0|
+			VFE_OUTPUTS_RDI1);
+	vfe32_ctrl->share_ctrl->start_ack_pending = TRUE;
 	CDBG("VFE opertaion mode = 0x%x, output mode = 0x%x\n",
-		vfe32_ctrl->share_ctrl->operation_mode,
+		vfe32_ctrl->share_ctrl->current_mode,
 		vfe32_ctrl->share_ctrl->outpath.output_mode);
-	msm_camera_io_w_mb(1, vfe32_ctrl->share_ctrl->vfebase +
-		VFE_CAMIF_COMMAND);
-	msm_camera_io_w_mb(VFE_AXI_CFG_MASK,
-		vfe32_ctrl->share_ctrl->vfebase + VFE_AXI_CFG);
+	if (vfe32_ctrl->share_ctrl->stats_comp)
+		irq_mask |= VFE_IRQ_STATUS0_STATS_COMPOSIT_MASK;
+	else
+		irq_mask |= 0x000FE000;
+	irq_mask |=
+		msm_camera_io_r(vfe32_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_0);
+	msm_camera_io_w(irq_mask,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_0);
+	msm_camera_io_w(VFE_IMASK_WHILE_STOPPING_1,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_IRQ_MASK_1);
+
+	irq_mask1 =
+		msm_camera_io_r(vfe32_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_1);
+	reg_update =
+		msm_camera_io_r_mb(vfe32_ctrl->share_ctrl->vfebase +
+			VFE_REG_UPDATE_CMD);
+
+	if (vfe32_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0) {
+		irq_mask1 |= VFE_IRQ_STATUS1_RDI0_REG_UPDATE_MASK;
+		msm_camera_io_w(irq_mask1, vfe32_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_1);
+		if (!atomic_cmpxchg(
+			&vfe32_ctrl->share_ctrl->rdi0_update_ack_pending,
+				0, 1)) {
+			msm_camera_io_w_mb(reg_update|0x2,
+				vfe32_ctrl->share_ctrl->vfebase +
+				VFE_REG_UPDATE_CMD);
+		}
+	}
+	if (vfe32_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1) {
+		irq_mask1 |= VFE_IRQ_STATUS1_RDI1_REG_UPDATE_MASK;
+		msm_camera_io_w(irq_mask1, vfe32_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_1);
+		if (!atomic_cmpxchg(
+			&vfe32_ctrl->share_ctrl->rdi1_update_ack_pending,
+				0, 1)) {
+			msm_camera_io_w_mb(reg_update|0x4,
+			vfe32_ctrl->share_ctrl->vfebase +
+			VFE_REG_UPDATE_CMD);
+		}
+		msm_camera_io_w_mb(reg_update|0x4, vfe32_ctrl->share_ctrl->
+			vfebase + VFE_REG_UPDATE_CMD);
+	}
+	if (vfe_operation_mode) {
+		msm_camera_io_w_mb(reg_update|0x1, vfe32_ctrl->share_ctrl->
+			vfebase + VFE_REG_UPDATE_CMD);
+		msm_camera_io_w_mb(1, vfe32_ctrl->share_ctrl->vfebase +
+			VFE_CAMIF_COMMAND);
+	}
+	vfe32_ctrl->share_ctrl->operation_mode |=
+		vfe32_ctrl->share_ctrl->current_mode;
+	/* Ensure the write order while writing
+	to the command register using the barrier */
+	atomic_set(&vfe32_ctrl->share_ctrl->vstate, 1);
 }
 
 static int vfe32_start_recording(
@@ -1583,15 +1148,6 @@ static int vfe32_stop_recording(
 		vfe32_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
 	return 0;
 }
-
-//Start LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
-static void vfe32_stop_recording_done(
-	struct msm_cam_media_controller *pmctl,
-	struct vfe32_ctrl_type *vfe32_ctrl)
-{
-	msm_camio_bus_scale_cfg(pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
-}
-//End  LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
 
 static void vfe32_start_liveshot(
 	struct msm_cam_media_controller *pmctl,
@@ -1620,8 +1176,7 @@ static int vfe32_zsl(
 	struct msm_cam_media_controller *pmctl,
 	struct vfe32_ctrl_type *vfe32_ctrl)
 {
-	vfe32_ctrl->share_ctrl->start_ack_pending = TRUE;
-	vfe32_start_common(pmctl, vfe32_ctrl); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+	vfe32_start_common(vfe32_ctrl);
 
 	msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase + 0x18C);
 	msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase + 0x188);
@@ -1634,7 +1189,7 @@ static int vfe32_capture_raw(
 {
 	vfe32_ctrl->share_ctrl->outpath.out0.capture_cnt = num_frames_capture;
 	vfe32_ctrl->share_ctrl->vfe_capture_count = num_frames_capture;
-	vfe32_start_common(pmctl, vfe32_ctrl); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+	vfe32_start_common(vfe32_ctrl);
 	return 0;
 }
 
@@ -1661,7 +1216,7 @@ static int vfe32_capture(
 
 	vfe32_ctrl->share_ctrl->vfe_capture_count = num_frames_capture;
 
-	vfe32_start_common(pmctl, vfe32_ctrl); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+	vfe32_start_common(vfe32_ctrl);
 	/* for debug */
 	msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase + 0x18C);
 	msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase + 0x188);
@@ -1672,7 +1227,7 @@ static int vfe32_start(
 	struct msm_cam_media_controller *pmctl,
 	struct vfe32_ctrl_type *vfe32_ctrl)
 {
-	vfe32_start_common(pmctl, vfe32_ctrl); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+	vfe32_start_common(vfe32_ctrl);
 	return 0;
 }
 
@@ -1876,8 +1431,6 @@ static struct vfe32_output_ch *vfe32_get_ch(
 		ch = &share_ctrl->outpath.out2;
 	else if (path == VFE_MSG_OUTPUT_TERTIARY2)
 		ch = &share_ctrl->outpath.out3;
-	else if (path == VFE_MSG_OUTPUT_TERTIARY3)
-		ch = &share_ctrl->outpath.out4;
 	else
 		pr_err("%s: Invalid path %d\n", __func__,
 			path);
@@ -1900,8 +1453,6 @@ static struct msm_free_buf *vfe32_check_free_buffer(
 		inst_handle = axi_ctrl->share_ctrl->outpath.out2.inst_handle;
 	else if (path == VFE_MSG_OUTPUT_TERTIARY2)
 		inst_handle = axi_ctrl->share_ctrl->outpath.out3.inst_handle;
-	else if (path == VFE_MSG_OUTPUT_TERTIARY3)
-		inst_handle = axi_ctrl->share_ctrl->outpath.out4.inst_handle;
 
 	vfe32_subdev_notify(id, path, inst_handle,
 		&axi_ctrl->subdev, axi_ctrl->share_ctrl);
@@ -1924,8 +1475,6 @@ static int configure_pingpong_buffers(
 		inst_handle = axi_ctrl->share_ctrl->outpath.out2.inst_handle;
 	else if (path == VFE_MSG_OUTPUT_TERTIARY2)
 		inst_handle = axi_ctrl->share_ctrl->outpath.out3.inst_handle;
-	else if (path == VFE_MSG_OUTPUT_TERTIARY3)
-		inst_handle = axi_ctrl->share_ctrl->outpath.out4.inst_handle;
 
 	vfe32_subdev_notify(id, path, inst_handle,
 		&axi_ctrl->subdev, axi_ctrl->share_ctrl);
@@ -1943,8 +1492,7 @@ static int configure_pingpong_buffers(
 
 		if ((axi_ctrl->share_ctrl->current_mode !=
 			VFE_OUTPUTS_RAW) && (path != VFE_MSG_OUTPUT_TERTIARY1)
-			&& (path != VFE_MSG_OUTPUT_TERTIARY2)
-			&& (path != VFE_MSG_OUTPUT_TERTIARY3)) {
+			&& (path != VFE_MSG_OUTPUT_TERTIARY2)) {
 			vfe32_put_ch_ping_addr(
 				axi_ctrl->share_ctrl->vfebase, outch->ch1,
 				outch->ping.ch_paddr[1]);
@@ -2003,62 +1551,6 @@ static void vfe32_send_isp_msg(
 			(void *)&isp_msg_evt);
 }
 
-//Start LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
-static int atoi(const char *name)
-{
-	int val = 0;
-	for (;; name++) {
-		switch (*name) {
-		case '0' ... '9':
-			val = 10*val+(*name-'0');
-			break;
-		default:
-			return val;
-		}
-	}
-}
-static void Set_LCD_Brightness(int value)
-{
-    int fd;
-    mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-    fd = sys_open("/sys/class/leds/lcd-backlight/brightness", O_RDWR | O_CREAT | O_APPEND, 0644);
-    if (fd >= 0) {
-        char buffer[10];
-//Start LGE_BSP_CAMERA::youngwook.song@lge.com WBT Error
-        int bytes = snprintf(buffer, BUFFER_SIZE_10, "%d\n", value);
-//End LGE_BSP_CAMERA::youngwook.song@lge.com WBT Error
-        sys_write(fd, buffer, bytes);
-        sys_close(fd);
-    }
-	else
-	{
-	    printk("%s: Open Error\n",__func__);
-	}
-	set_fs(old_fs);
-}
-static int Get_LCD_Brightness(void)
-{
-	int fd;
-	int value = 0;
-	mm_segment_t old_fs = get_fs();
-	set_fs(KERNEL_DS);
-	fd = sys_open("/sys/class/leds/lcd-backlight/brightness", O_RDWR | O_CREAT | O_APPEND, 0644);
-	if (fd >= 0)
-	{
-		char buffer[10];
-		sys_read(fd,buffer,10);
-		value = atoi(buffer);
-		sys_close(fd);
-	}
-	else
-	{
-	    printk("%s: Open Error\n",__func__);
-	}
-	set_fs(old_fs);
-	return value;
-}
-//End LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
 static int vfe32_proc_general(
 	struct msm_cam_media_controller *pmctl,
 	struct msm_isp_cmd *cmd,
@@ -2078,9 +1570,7 @@ static int vfe32_proc_general(
 	case VFE_CMD_RESET:
 		pr_info("vfe32_proc_general: cmdID = %s\n",
 			vfe32_general_cmd[cmd->id]);
-		vfe32_ctrl->share_ctrl->vfe_reset_flag = true;
-		vfe32_reset(vfe32_ctrl);
-		pmctl->hardware_running = 0; /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
+		vfe32_reset_internal_variables(vfe32_ctrl);
 		break;
 	case VFE_CMD_START:
 		pr_info("vfe32_proc_general: cmdID = %s\n",
@@ -2131,39 +1621,23 @@ static int vfe32_proc_general(
 	case VFE_CMD_START_RECORDING:
 		pr_info("vfe32_proc_general: cmdID = %s\n",
 			vfe32_general_cmd[cmd->id]);
-		//Start LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
-		CurrentBrightnessValue = Get_LCD_Brightness();
-		if (CurrentBrightnessValue > 140)
-		{
-			ControlBrightnessValue = CurrentBrightnessValue * (100-BrightnessDownRatio) / 100;
-			Set_LCD_Brightness(ControlBrightnessValue);
-			printk("[LCD_Control] Control LCD Brightness = %d\n",ControlBrightnessValue);
-		}
-		printk("[LCD_Control] Current LCD Brightness = %d\n",CurrentBrightnessValue);
-		//End LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
 		rc = vfe32_start_recording(pmctl, vfe32_ctrl);
 		break;
 	case VFE_CMD_STOP_RECORDING:
 		pr_info("vfe32_proc_general: cmdID = %s\n",
 			vfe32_general_cmd[cmd->id]);
 		rc = vfe32_stop_recording(pmctl, vfe32_ctrl);
-		break;		
-//Start LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
-	case VFE_CMD_STOP_RECORDING_DONE:
-		pr_info("vfe32_proc_general: cmdID = VFE_CMD_STOP_RECORDING_DONE\n");
-		//Start LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
-		printk("[LCD_Control] Current LCD Brightness = %d\n",CurrentBrightnessValue);
-		Set_LCD_Brightness(CurrentBrightnessValue);
-		//End LGE_BSP_CAMERA::seongjo.kim@lge.com LCD Brightness down when camcording enter
-		vfe32_stop_recording_done(pmctl, vfe32_ctrl);
 		break;
-//End  LGE_BSP_CAMERA : iommu page fault patch for JB - jonghwan.ko@lge.com
 	case VFE_CMD_OPERATION_CFG: {
 		if (cmd->length != V32_OPERATION_CFG_LEN) {
 			rc = -EINVAL;
 			goto proc_general_done;
 		}
 		cmdp = kmalloc(V32_OPERATION_CFG_LEN, GFP_ATOMIC);
+		if (!cmdp) {
+			rc = -ENOMEM;
+			goto proc_general_done;
+		}
 		if (copy_from_user(cmdp,
 			(void __user *)(cmd->value),
 			V32_OPERATION_CFG_LEN)) {
@@ -3180,8 +2654,9 @@ static int vfe32_proc_general(
 				goto proc_general_done;
 		}
 
+		vfe32_ctrl->share_ctrl->current_mode =
+			vfe_params.operation_mode;
 		vfe32_stop(vfe32_ctrl);
-		pmctl->hardware_running = 0; /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
 		break;
 
 	case VFE_CMD_SYNC_TIMER_SETTING:
@@ -3555,562 +3030,312 @@ static inline void vfe32_read_irq_status(
 
 }
 
-void axi_stop_pix(struct vfe_share_ctrl_t *share_ctrl,
-	uint32_t vfe_mode, uint8_t cmd_type)
-{
-	uint32_t reg_update = 0x1;
-	switch (cmd_type) {
-	case AXI_CMD_RAW_CAPTURE:
-		msm_camera_io_w(0, share_ctrl->vfebase
-			+ vfe32_AXI_WM_CFG[share_ctrl->outpath.out0.ch0]);
-		break;
-	case AXI_CMD_PREVIEW: {
-		switch (vfe_mode) {
-		case VFE_OUTPUTS_PREVIEW:
-		case VFE_OUTPUTS_PREVIEW_AND_VIDEO:
-			if (share_ctrl->comp_output_mode &
-				VFE32_OUTPUT_MODE_PRIMARY) {
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out0.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out0.ch1]);
-			} else if (share_ctrl->comp_output_mode &
-					VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out0.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out0.ch1]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out0.ch2]);
-			}
-			break;
-		default:
-			if (share_ctrl->comp_output_mode &
-				VFE32_OUTPUT_MODE_SECONDARY) {
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out1.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out1.ch1]);
-			} else if (share_ctrl->comp_output_mode &
-				VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out1.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out1.ch1]);
-				msm_camera_io_w(0, share_ctrl->vfebase
-					+ vfe32_AXI_WM_CFG[share_ctrl->
-					outpath.out1.ch2]);
-			}
-			break;
-			}
-		}
-		break;
-	default:
-		if (share_ctrl->comp_output_mode &
-			VFE32_OUTPUT_MODE_PRIMARY) {
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out0.ch0]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out0.ch1]);
-		} else if (share_ctrl->comp_output_mode &
-				VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out0.ch0]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out0.ch1]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out0.ch2]);
-		}
-
-		if (share_ctrl->comp_output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY) {
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->
-				outpath.out1.ch0]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->outpath.out1.ch1]);
-		} else if (share_ctrl->comp_output_mode &
-			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->outpath.out1.ch0]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->outpath.out1.ch1]);
-			msm_camera_io_w(0, share_ctrl->vfebase +
-				vfe32_AXI_WM_CFG[share_ctrl->outpath.out1.ch2]);
-		}
-		break;
-	}
-
-	msm_camera_io_w_mb(reg_update,
-		share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-}
-
-void axi_stop_rdi0(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t reg_update = 0x2;
-	msm_camera_io_w(0, share_ctrl->vfebase +
-		vfe32_AXI_WM_CFG[share_ctrl->outpath.out2.ch0]);
-	msm_camera_io_w_mb(reg_update,
-		share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-}
-
-void axi_stop_rdi1(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t reg_update = 0x4;
-	msm_camera_io_w(0, share_ctrl->vfebase +
-		vfe32_AXI_WM_CFG[share_ctrl->outpath.out3.ch0]);
-	msm_camera_io_w_mb(reg_update,
-		share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-}
-
-void axi_stop_rdi2(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t reg_update = 0x8; /* bit 3 */
-	msm_camera_io_w(0, share_ctrl->vfebase +
-		vfe32_AXI_WM_CFG[share_ctrl->outpath.out4.ch0]);
-	msm_camera_io_w_mb(reg_update,
-		share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-}
-
-void axi_stop_process(struct vfe_share_ctrl_t *share_ctrl)
-{
-	uint32_t vfe_mode =
-	share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0|
-		VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
-
-	if (share_ctrl->current_mode & VFE_OUTPUTS_RDI0) {
-		axi_stop_rdi0(share_ctrl);
-		axi_disable_wm_irq(share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY1);
-		share_ctrl->comp_output_mode &= ~VFE32_OUTPUT_MODE_TERTIARY1;
-		share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI0);
-	}
-	if (share_ctrl->current_mode & VFE_OUTPUTS_RDI1) {
-		axi_stop_rdi1(share_ctrl);
-		axi_disable_wm_irq(share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY2);
-		share_ctrl->comp_output_mode &= ~VFE32_OUTPUT_MODE_TERTIARY2;
-		share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI1);
-	}
-	if (share_ctrl->current_mode & VFE_OUTPUTS_RDI2) {
-		axi_stop_rdi2(share_ctrl);
-		axi_disable_wm_irq(share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY3);
-		share_ctrl->comp_output_mode &= ~VFE32_OUTPUT_MODE_TERTIARY3;
-		share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI2);
-	}
-	if (vfe_mode) {
-		uint16_t mode = share_ctrl->comp_output_mode &
-			~(VFE32_OUTPUT_MODE_TERTIARY1|
-			VFE32_OUTPUT_MODE_TERTIARY2|
-			  VFE32_OUTPUT_MODE_TERTIARY3);
-		axi_stop_pix(share_ctrl, vfe_mode, share_ctrl->cmd_type);
-		axi_disable_wm_irq(share_ctrl, mode);
-		share_ctrl->comp_output_mode &=
-				(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-				 VFE32_OUTPUT_MODE_TERTIARY3);
-	}
-}
-
 static void vfe32_process_reg_update_irq(
 		struct vfe32_ctrl_type *vfe32_ctrl)
 {
 	unsigned long flags;
-	struct vfe_share_ctrl_t *share_ctrl = vfe32_ctrl->share_ctrl;
-	if (atomic_read(
-		&share_ctrl->pix0_update_ack_pending) == 2) {
-		uint32_t vfe_mode =
-				share_ctrl->operation_mode & ~(VFE_OUTPUTS_RDI0|
-					VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
 
-		if (share_ctrl->dual_enabled && !share_ctrl->update_counter) {
-			axi_stop_pix(share_ctrl, vfe_mode,
-				share_ctrl->cmd_type);
-			share_ctrl->update_counter++;
-		} else {
-			uint16_t output_mode =
-				share_ctrl->comp_output_mode &
-				~(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-				  VFE32_OUTPUT_MODE_TERTIARY3);
-			share_ctrl->update_counter = 0;
-			if (!share_ctrl->dual_enabled)
-				axi_stop_pix(share_ctrl, vfe_mode,
-					share_ctrl->cmd_type);
-			axi_disable_wm_irq(share_ctrl, output_mode);
-			axi_disable_irq(share_ctrl, vfe_mode);
-			atomic_set(&share_ctrl->pix0_update_ack_pending, 0);
-			msm_camera_io_w_mb(
-					CAMIF_COMMAND_STOP_AT_FRAME_BOUNDARY,
-					share_ctrl->vfebase +
-					VFE_CAMIF_COMMAND);
-			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-				share_ctrl->vfeFrameId,
-				MSG_ID_PIX0_UPDATE_ACK);
-			share_ctrl->comp_output_mode &=
-				(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-				 VFE32_OUTPUT_MODE_TERTIARY3);
+	if (vfe32_ctrl->share_ctrl->recording_state ==
+				VFE_STATE_START_REQUESTED) {
+		if (vfe32_ctrl->share_ctrl->operation_mode &
+				VFE_OUTPUTS_VIDEO_AND_PREVIEW) {
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+		} else if (vfe32_ctrl->share_ctrl->operation_mode &
+				VFE_OUTPUTS_PREVIEW_AND_VIDEO) {
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out1.ch0]);
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out1.ch1]);
 		}
-	}  else {
-		if (share_ctrl->recording_state == VFE_STATE_START_REQUESTED) {
-			if (share_ctrl->operation_mode &
-					VFE_OUTPUTS_VIDEO_AND_PREVIEW) {
-				msm_camera_io_w((
-					0x1 << share_ctrl->outpath.out0.ch0 |
-					0x1 << share_ctrl->outpath.out0.ch1),
-					share_ctrl->vfebase + VFE_BUS_CMD);
-				msm_camera_io_w(1,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch0]);
-				msm_camera_io_w(1,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch1]);
-			} else if (share_ctrl->operation_mode &
-					VFE_OUTPUTS_PREVIEW_AND_VIDEO) {
-				msm_camera_io_w((
-					0x1 << share_ctrl->outpath.out1.ch0 |
-					0x1 << share_ctrl->outpath.out1.ch1),
-					share_ctrl->vfebase + VFE_BUS_CMD);
-				msm_camera_io_w(1,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out1.ch0]);
-				msm_camera_io_w(1,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out1.ch1]);
-			}
-			share_ctrl->recording_state = VFE_STATE_STARTED;
-			msm_camera_io_w_mb(1,
-				share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-			CDBG("start video triggered .\n");
-		} else if (share_ctrl->recording_state ==
-					VFE_STATE_STOP_REQUESTED) {
-			if (share_ctrl->operation_mode &
-					VFE_OUTPUTS_VIDEO_AND_PREVIEW) {
-				msm_camera_io_w(0,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch0]);
-				msm_camera_io_w(0,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch1]);
-			} else if (share_ctrl->operation_mode &
-					VFE_OUTPUTS_PREVIEW_AND_VIDEO) {
-				msm_camera_io_w(0,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out1.ch0]);
-				msm_camera_io_w(0,
-					share_ctrl->vfebase + vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out1.ch1]);
-			}
-			CDBG("stop video triggered .\n");
+		vfe32_ctrl->share_ctrl->recording_state = VFE_STATE_STARTED;
+		msm_camera_io_w_mb(1,
+			vfe32_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
+		CDBG("start video triggered .\n");
+	} else if (vfe32_ctrl->share_ctrl->recording_state ==
+			VFE_STATE_STOP_REQUESTED) {
+		if (vfe32_ctrl->share_ctrl->operation_mode &
+				VFE_OUTPUTS_VIDEO_AND_PREVIEW) {
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+		} else if (vfe32_ctrl->share_ctrl->operation_mode &
+				VFE_OUTPUTS_PREVIEW_AND_VIDEO) {
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out1.ch0]);
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out1.ch1]);
 		}
-
-		if (atomic_cmpxchg(
-		&share_ctrl->pix0_update_ack_pending, 1, 0) == 1) {
-			share_ctrl->comp_output_mode |=
-				(share_ctrl->outpath.output_mode
-				& ~(VFE32_OUTPUT_MODE_TERTIARY1|
-					VFE32_OUTPUT_MODE_TERTIARY2|
-					VFE32_OUTPUT_MODE_TERTIARY3));
-			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-				share_ctrl->vfeFrameId, MSG_ID_PIX0_UPDATE_ACK);
-		} else {
-			if (share_ctrl->recording_state ==
-						VFE_STATE_STOP_REQUESTED) {
-				share_ctrl->recording_state = VFE_STATE_STOPPED;
-				/* request a reg update and send STOP_REC_ACK
-				 * when we process the next reg update irq.
-				 */
-				msm_camera_io_w_mb(1, share_ctrl->vfebase +
-							VFE_REG_UPDATE_CMD);
-			} else if (share_ctrl->recording_state ==
-						VFE_STATE_STOPPED) {
-				vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-					share_ctrl->vfeFrameId,
-					MSG_ID_STOP_REC_ACK);
-				share_ctrl->recording_state = VFE_STATE_IDLE;
-			}
-			spin_lock_irqsave(
-				&share_ctrl->update_ack_lock,
-				flags);
-			if (share_ctrl->update_ack_pending == TRUE) {
-				share_ctrl->update_ack_pending = FALSE;
-				spin_unlock_irqrestore(
-					&share_ctrl->update_ack_lock, flags);
-				vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-					share_ctrl->vfeFrameId,
-					MSG_ID_UPDATE_ACK);
-			} else {
-				spin_unlock_irqrestore(
-					&share_ctrl->update_ack_lock, flags);
-			}
-		}
-
-		switch (share_ctrl->liveshot_state) {
-		case VFE_STATE_START_REQUESTED:
-			CDBG("%s enabling liveshot output\n", __func__);
-			if (share_ctrl->comp_output_mode &
-						VFE32_OUTPUT_MODE_PRIMARY) {
-				msm_camera_io_w((
-					0x1 << share_ctrl->outpath.out0.ch0 |
-					0x1 << share_ctrl->outpath.out0.ch1),
-					share_ctrl->vfebase + VFE_BUS_CMD);
-				msm_camera_io_w(1, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch0]);
-				msm_camera_io_w(1, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch1]);
-
-				share_ctrl->liveshot_state =
-					VFE_STATE_STARTED;
-			}
-			break;
-		case VFE_STATE_STARTED:
-			share_ctrl->vfe_capture_count--;
-			if (!share_ctrl->vfe_capture_count &&
-				(share_ctrl->comp_output_mode &
-					VFE32_OUTPUT_MODE_PRIMARY)) {
-				msm_camera_io_w(0, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch1]);
-			}
-			break;
-		case VFE_STATE_STOP_REQUESTED:
-			if (share_ctrl->comp_output_mode &
-					VFE32_OUTPUT_MODE_PRIMARY) {
-				/* Stop requested, stop write masters, and
-				 * trigger REG_UPDATE. Send STOP_LS_ACK in
-				 * next reg update. */
-				msm_camera_io_w(0, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch0]);
-				msm_camera_io_w(0, share_ctrl->vfebase +
-					vfe32_AXI_WM_CFG[
-					share_ctrl->outpath.out0.ch1]);
-
-				share_ctrl->liveshot_state = VFE_STATE_STOPPED;
-				msm_camera_io_w_mb(1, share_ctrl->vfebase +
-					VFE_REG_UPDATE_CMD);
-			}
-			break;
-		case VFE_STATE_STOPPED:
-			CDBG("%s Sending STOP_LS ACK\n", __func__);
-			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-				share_ctrl->vfeFrameId, MSG_ID_STOP_LS_ACK);
-			share_ctrl->liveshot_state = VFE_STATE_IDLE;
-			break;
-		default:
-			break;
-		}
-
-		if ((share_ctrl->operation_mode & VFE_OUTPUTS_THUMB_AND_MAIN) ||
-			(share_ctrl->operation_mode &
-				VFE_OUTPUTS_MAIN_AND_THUMB) ||
-			(share_ctrl->operation_mode &
-				VFE_OUTPUTS_THUMB_AND_JPEG) ||
-			(share_ctrl->operation_mode &
-				VFE_OUTPUTS_JPEG_AND_THUMB)) {
-			/* in snapshot mode */
-			/* later we need to add check for live snapshot mode. */
-			if (vfe32_ctrl->frame_skip_pattern & (0x1 <<
-				(vfe32_ctrl->snapshot_frame_cnt %
-					vfe32_ctrl->frame_skip_cnt))) {
-				share_ctrl->vfe_capture_count--;
-				/* if last frame to be captured: */
-				if (share_ctrl->vfe_capture_count == 0) {
-					/* stop the bus output: */
-					uint32_t vfe_mode =
-						share_ctrl->operation_mode &
-							~(VFE_OUTPUTS_RDI0|
-							VFE_OUTPUTS_RDI1|
-							VFE_OUTPUTS_RDI2);
-					axi_stop_pix(share_ctrl, vfe_mode,
-						AXI_CMD_CAPTURE);
-					msm_camera_io_w_mb
-					(CAMIF_COMMAND_STOP_AT_FRAME_BOUNDARY,
-					share_ctrl->vfebase +
-					VFE_CAMIF_COMMAND);
-					vfe32_ctrl->snapshot_frame_cnt = -1;
-					vfe32_ctrl->frame_skip_cnt = 31;
-					vfe32_ctrl->frame_skip_pattern =
-								0xffffffff;
-				} /*if snapshot count is 0*/
-			} /*if frame is not being dropped*/
-			vfe32_ctrl->snapshot_frame_cnt++;
-			/* then do reg_update. */
-			msm_camera_io_w(1,
-				share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
-		} /* if snapshot mode. */
+		CDBG("stop video triggered .\n");
 	}
+
+	spin_lock_irqsave(&vfe32_ctrl->share_ctrl->start_ack_lock, flags);
+	if (vfe32_ctrl->share_ctrl->start_ack_pending == TRUE) {
+		vfe32_ctrl->share_ctrl->start_ack_pending = FALSE;
+		spin_unlock_irqrestore(
+			&vfe32_ctrl->share_ctrl->start_ack_lock, flags);
+		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+			vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_START_ACK);
+	} else {
+		spin_unlock_irqrestore(
+			&vfe32_ctrl->share_ctrl->start_ack_lock, flags);
+		if (vfe32_ctrl->share_ctrl->recording_state ==
+				VFE_STATE_STOP_REQUESTED) {
+			vfe32_ctrl->share_ctrl->recording_state =
+						VFE_STATE_STOPPED;
+			/* request a reg update and send STOP_REC_ACK
+			 * when we process the next reg update irq.
+			 */
+			msm_camera_io_w_mb(1,
+			vfe32_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
+		} else if (vfe32_ctrl->share_ctrl->recording_state ==
+					VFE_STATE_STOPPED) {
+			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+				vfe32_ctrl->share_ctrl->vfeFrameId,
+				MSG_ID_STOP_REC_ACK);
+			vfe32_ctrl->share_ctrl->recording_state =
+						VFE_STATE_IDLE;
+		}
+		spin_lock_irqsave(
+			&vfe32_ctrl->share_ctrl->update_ack_lock, flags);
+		if (vfe32_ctrl->share_ctrl->update_ack_pending == TRUE) {
+			vfe32_ctrl->share_ctrl->update_ack_pending = FALSE;
+			spin_unlock_irqrestore(
+				&vfe32_ctrl->share_ctrl->update_ack_lock,
+								flags);
+			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+				vfe32_ctrl->share_ctrl->vfeFrameId,
+				MSG_ID_UPDATE_ACK);
+		} else {
+			spin_unlock_irqrestore(
+				&vfe32_ctrl->share_ctrl->update_ack_lock,
+								flags);
+		}
+	}
+
+	switch (vfe32_ctrl->share_ctrl->liveshot_state) {
+	case VFE_STATE_START_REQUESTED:
+		CDBG("%s enabling liveshot output\n", __func__);
+		if (vfe32_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_PRIMARY) {
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(1, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+
+			vfe32_ctrl->share_ctrl->liveshot_state =
+				VFE_STATE_STARTED;
+		}
+		break;
+	case VFE_STATE_STARTED:
+		vfe32_ctrl->share_ctrl->vfe_capture_count--;
+		if (!vfe32_ctrl->share_ctrl->vfe_capture_count &&
+			(vfe32_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_PRIMARY)) {
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+		}
+		break;
+	case VFE_STATE_STOP_REQUESTED:
+		if (vfe32_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_PRIMARY) {
+			/* Stop requested, stop write masters, and
+			 * trigger REG_UPDATE. Send STOP_LS_ACK in
+			 * next reg update. */
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[vfe32_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+
+			vfe32_ctrl->share_ctrl->liveshot_state =
+				VFE_STATE_STOPPED;
+			msm_camera_io_w_mb(1, vfe32_ctrl->share_ctrl->vfebase +
+				VFE_REG_UPDATE_CMD);
+		}
+		break;
+	case VFE_STATE_STOPPED:
+		CDBG("%s Sending STOP_LS ACK\n", __func__);
+		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+		vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_STOP_LS_ACK);
+		vfe32_ctrl->share_ctrl->liveshot_state = VFE_STATE_IDLE;
+		break;
+	default:
+		break;
+	}
+
+	if ((vfe32_ctrl->share_ctrl->operation_mode &
+			VFE_OUTPUTS_THUMB_AND_MAIN) ||
+		(vfe32_ctrl->share_ctrl->operation_mode &
+			VFE_OUTPUTS_MAIN_AND_THUMB) ||
+		(vfe32_ctrl->share_ctrl->operation_mode &
+			VFE_OUTPUTS_THUMB_AND_JPEG) ||
+		(vfe32_ctrl->share_ctrl->operation_mode &
+			VFE_OUTPUTS_JPEG_AND_THUMB)) {
+		/* in snapshot mode */
+		/* later we need to add check for live snapshot mode. */
+		if (vfe32_ctrl->frame_skip_pattern & (0x1 <<
+			(vfe32_ctrl->snapshot_frame_cnt %
+				vfe32_ctrl->frame_skip_cnt))) {
+			vfe32_ctrl->share_ctrl->vfe_capture_count--;
+			/* if last frame to be captured: */
+			if (vfe32_ctrl->share_ctrl->vfe_capture_count == 0) {
+				/* stop the bus output:write master enable = 0*/
+				if (vfe32_ctrl->share_ctrl->outpath.output_mode
+					& VFE32_OUTPUT_MODE_PRIMARY) {
+					msm_camera_io_w(0,
+						vfe32_ctrl->share_ctrl->vfebase+
+						vfe32_AXI_WM_CFG[vfe32_ctrl->
+						share_ctrl->outpath.out0.ch0]);
+					msm_camera_io_w(0,
+						vfe32_ctrl->share_ctrl->vfebase+
+						vfe32_AXI_WM_CFG[vfe32_ctrl->
+						share_ctrl->outpath.out0.ch1]);
+				}
+				if (vfe32_ctrl->share_ctrl->outpath.output_mode&
+						VFE32_OUTPUT_MODE_SECONDARY) {
+					msm_camera_io_w(0,
+						vfe32_ctrl->share_ctrl->vfebase+
+						vfe32_AXI_WM_CFG[vfe32_ctrl->
+						share_ctrl->outpath.out1.ch0]);
+					msm_camera_io_w(0,
+						vfe32_ctrl->share_ctrl->vfebase+
+						vfe32_AXI_WM_CFG[vfe32_ctrl->
+						share_ctrl->outpath.out1.ch1]);
+				}
+				msm_camera_io_w_mb
+				(CAMIF_COMMAND_STOP_AT_FRAME_BOUNDARY,
+				vfe32_ctrl->share_ctrl->vfebase +
+				VFE_CAMIF_COMMAND);
+				vfe32_ctrl->snapshot_frame_cnt = -1;
+				vfe32_ctrl->frame_skip_cnt = 31;
+				vfe32_ctrl->frame_skip_pattern = 0xffffffff;
+			} /*if snapshot count is 0*/
+		} /*if frame is not being dropped*/
+		vfe32_ctrl->snapshot_frame_cnt++;
+		/* then do reg_update. */
+		msm_camera_io_w(1,
+			vfe32_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
+	} /* if snapshot mode. */
 }
 
 static void vfe32_process_rdi0_reg_update_irq(
 	struct vfe32_ctrl_type *vfe32_ctrl)
 {
 	if (atomic_cmpxchg(
-		&vfe32_ctrl->share_ctrl->rdi0_update_ack_pending, 1, 0) == 1) {
-		vfe32_ctrl->share_ctrl->comp_output_mode |=
-			VFE32_OUTPUT_MODE_TERTIARY1;
+		&vfe32_ctrl->share_ctrl->rdi0_update_ack_pending, 1, 0)) {
 		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi0FrameId,
+			vfe32_ctrl->share_ctrl->vfeFrameId,
 			MSG_ID_RDI0_UPDATE_ACK);
-	}
-	pr_info("%s Capture Count %d ", __func__, vfe32_ctrl->share_ctrl->rdi0_capture_count);
-	if ((atomic_read(
-		&vfe32_ctrl->share_ctrl->rdi0_update_ack_pending) == 2)
-		|| (vfe32_ctrl->share_ctrl->rdi0_capture_count == 0)) {
-		axi_disable_wm_irq(vfe32_ctrl->share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY1);
-		axi_disable_irq(vfe32_ctrl->share_ctrl, VFE_OUTPUTS_RDI0);
-		atomic_set(&vfe32_ctrl->share_ctrl->rdi0_update_ack_pending, 0);
-		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi0FrameId,
-			MSG_ID_RDI0_UPDATE_ACK);
-
-		if (vfe32_ctrl->share_ctrl->rdi0_capture_count == 0)
-			vfe32_ctrl->share_ctrl->rdi0_capture_count = -1;
-		if (vfe32_ctrl->share_ctrl->outpath.out2.capture_cnt
-			== 0)
-			vfe32_ctrl->share_ctrl->outpath.out2.capture_cnt = -1;
-		vfe32_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY1;
-		vfe32_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI0);
-	}
-
-	if (vfe32_ctrl->share_ctrl->rdi0_capture_count > 0) {
-		vfe32_ctrl->share_ctrl->rdi0_capture_count--;
-		if (!vfe32_ctrl->share_ctrl->rdi0_capture_count) {
-			axi_stop_rdi0(vfe32_ctrl->share_ctrl);
-		} else {
-		pr_info("%s Trigger RDI0 Reg Update ", __func__);
-		msm_camera_io_w_mb(0x2,
-			vfe32_ctrl->share_ctrl->vfebase +
-			VFE_REG_UPDATE_CMD);
-		}			
 	}
 }
 
 static void vfe32_process_rdi1_reg_update_irq(
 	struct vfe32_ctrl_type *vfe32_ctrl)
 {
-
 	if (atomic_cmpxchg(
-		&vfe32_ctrl->share_ctrl->rdi1_update_ack_pending, 1, 0)
-				== 1) {
-		vfe32_ctrl->share_ctrl->comp_output_mode |=
-			VFE32_OUTPUT_MODE_TERTIARY2;
+		&vfe32_ctrl->share_ctrl->rdi1_update_ack_pending, 1, 0)) {
 		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi1FrameId,
+			vfe32_ctrl->share_ctrl->vfeFrameId,
 			MSG_ID_RDI1_UPDATE_ACK);
-	}
-	pr_info("%s Capture Count %d ", __func__, vfe32_ctrl->share_ctrl->rdi1_capture_count);
-
-	if ((atomic_read(
-		&vfe32_ctrl->share_ctrl->rdi1_update_ack_pending) == 2)
-		|| (vfe32_ctrl->share_ctrl->rdi1_capture_count == 0)) {
-		axi_disable_wm_irq(vfe32_ctrl->share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY2);
-		axi_disable_irq(vfe32_ctrl->share_ctrl, VFE_OUTPUTS_RDI1);
-		atomic_set(&vfe32_ctrl->share_ctrl->rdi1_update_ack_pending, 0);
-		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi1FrameId,
-			MSG_ID_RDI1_UPDATE_ACK);
-
-		if (vfe32_ctrl->share_ctrl->rdi1_capture_count == 0)
-			vfe32_ctrl->share_ctrl->rdi1_capture_count = -1;
-		if (vfe32_ctrl->share_ctrl->outpath.out3.capture_cnt
-			== 0)
-			vfe32_ctrl->share_ctrl->outpath.out3.capture_cnt = -1;
-		vfe32_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY2;
-		vfe32_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI1);
-	}
-
-	if (vfe32_ctrl->share_ctrl->rdi1_capture_count > 0) {
-		vfe32_ctrl->share_ctrl->rdi1_capture_count--;
-		if (!vfe32_ctrl->share_ctrl->rdi1_capture_count) {
-			axi_stop_rdi1(vfe32_ctrl->share_ctrl);
-		} else {
-		pr_info("%s Trigger RDI1 Reg Update ", __func__);
-		msm_camera_io_w_mb(0x4,
-			vfe32_ctrl->share_ctrl->vfebase +
-			VFE_REG_UPDATE_CMD);
-		}
 	}
 }
 
-
-static void vfe32_process_rdi2_reg_update_irq(
+static void vfe32_set_default_reg_values(
 	struct vfe32_ctrl_type *vfe32_ctrl)
 {
-	if (atomic_cmpxchg(
-		&vfe32_ctrl->share_ctrl->rdi2_update_ack_pending, 1, 0)
-				== 1) {
-		vfe32_ctrl->share_ctrl->comp_output_mode |=
-			VFE32_OUTPUT_MODE_TERTIARY3;
-		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi2FrameId,
-			MSG_ID_RDI2_UPDATE_ACK);
-	}
-	pr_info("%s Capture Count %d ", __func__, vfe32_ctrl->share_ctrl->rdi2_capture_count);
+	msm_camera_io_w(0x800080,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_DEMUX_GAIN_0);
+	msm_camera_io_w(0x800080,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_DEMUX_GAIN_1);
+	/* What value should we program CGC_OVERRIDE to? */
+	msm_camera_io_w(0xFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_CGC_OVERRIDE);
 
-	if ((atomic_read(
-		&vfe32_ctrl->share_ctrl->rdi2_update_ack_pending) == 2)
-		|| (vfe32_ctrl->share_ctrl->rdi2_capture_count == 0)) {
-		axi_disable_wm_irq(vfe32_ctrl->share_ctrl,
-			VFE32_OUTPUT_MODE_TERTIARY3);
-		axi_disable_irq(vfe32_ctrl->share_ctrl, VFE_OUTPUTS_RDI2);
-		atomic_set(&vfe32_ctrl->share_ctrl->rdi2_update_ack_pending, 0);
-		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-			vfe32_ctrl->share_ctrl->rdi2FrameId,
-			MSG_ID_RDI2_UPDATE_ACK);
+	/* default frame drop period and pattern */
+	msm_camera_io_w(0x1f,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_Y_CFG);
+	msm_camera_io_w(0x1f,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_CBCR_CFG);
+	msm_camera_io_w(0xFFFFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_ENC_Y_PATTERN);
+	msm_camera_io_w(0xFFFFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase +
+		VFE_FRAMEDROP_ENC_CBCR_PATTERN);
+	msm_camera_io_w(0x1f,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_Y);
+	msm_camera_io_w(0x1f,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_CBCR);
+	msm_camera_io_w(0xFFFFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_FRAMEDROP_VIEW_Y_PATTERN);
+	msm_camera_io_w(0xFFFFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase +
+		VFE_FRAMEDROP_VIEW_CBCR_PATTERN);
+	msm_camera_io_w(0, vfe32_ctrl->share_ctrl->vfebase + VFE_CLAMP_MIN);
+	msm_camera_io_w(0xFFFFFF,
+		vfe32_ctrl->share_ctrl->vfebase + VFE_CLAMP_MAX);
 
-		if (vfe32_ctrl->share_ctrl->rdi2_capture_count == 0)
-			vfe32_ctrl->share_ctrl->rdi2_capture_count = -1;
-		if (vfe32_ctrl->share_ctrl->outpath.out4.capture_cnt
-			== 0)
-			vfe32_ctrl->share_ctrl->outpath.out4.capture_cnt = -1;
-		vfe32_ctrl->share_ctrl->comp_output_mode &=
-			~VFE32_OUTPUT_MODE_TERTIARY3;
-		vfe32_ctrl->share_ctrl->operation_mode &=
-			~(VFE_OUTPUTS_RDI2);
-	}
-
-	if (vfe32_ctrl->share_ctrl->rdi2_capture_count > 0) {
-		vfe32_ctrl->share_ctrl->rdi2_capture_count--;
-		if (!vfe32_ctrl->share_ctrl->rdi2_capture_count) {
-			axi_stop_rdi2(vfe32_ctrl->share_ctrl);
-		} else {
-		pr_info("%s Trigger RDI2 Reg Update ", __func__);
-		msm_camera_io_w_mb(0x8,
+	/* stats UB config */
+	CDBG("%s: Use bayer stats = %d\n", __func__,
+		 vfe32_use_bayer_stats(vfe32_ctrl));
+	if (!vfe32_use_bayer_stats(vfe32_ctrl)) {
+		msm_camera_io_w(0x3980007,
 			vfe32_ctrl->share_ctrl->vfebase +
-			VFE_REG_UPDATE_CMD);
-		}
+				VFE_BUS_STATS_AEC_BG_UB_CFG);
+		msm_camera_io_w(0x3A00007,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_AF_BF_UB_CFG);
+		msm_camera_io_w(0x3A8000F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_AWB_UB_CFG);
+		msm_camera_io_w(0x3B80007,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_RS_UB_CFG);
+		msm_camera_io_w(0x3C0001F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_CS_UB_CFG);
+		msm_camera_io_w(0x3E0001F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_HIST_UB_CFG);
+	} else {
+		msm_camera_io_w(0x350001F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_HIST_UB_CFG);
+		msm_camera_io_w(0x370002F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_AEC_BG_UB_CFG);
+		msm_camera_io_w(0x3A0002F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_AF_BF_UB_CFG);
+		msm_camera_io_w(0x3D00007,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_RS_UB_CFG);
+		msm_camera_io_w(0x3D8001F,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_CS_UB_CFG);
+		msm_camera_io_w(0x3F80007,
+			vfe32_ctrl->share_ctrl->vfebase +
+				VFE_BUS_STATS_SKIN_BHIST_UB_CFG);
 	}
+	vfe32_reset_dmi_tables(vfe32_ctrl);
 }
 
 static void vfe32_process_reset_irq(
@@ -4119,33 +3344,23 @@ static void vfe32_process_reset_irq(
 	unsigned long flags;
 
 	atomic_set(&vfe32_ctrl->share_ctrl->vstate, 0);
-	atomic_set(&vfe32_ctrl->share_ctrl->handle_common_irq, 0);
 
 	spin_lock_irqsave(&vfe32_ctrl->share_ctrl->stop_flag_lock, flags);
 	if (vfe32_ctrl->share_ctrl->stop_ack_pending) {
 		vfe32_ctrl->share_ctrl->stop_ack_pending = FALSE;
 		spin_unlock_irqrestore(
 			&vfe32_ctrl->share_ctrl->stop_flag_lock, flags);
-		if (vfe32_ctrl->share_ctrl->sync_abort)
-			complete(&vfe32_ctrl->share_ctrl->reset_complete);
-		else
-			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
-				vfe32_ctrl->share_ctrl->vfeFrameId,
-				MSG_ID_STOP_ACK);
+		vfe32_send_isp_msg(&vfe32_ctrl->subdev,
+			vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_STOP_ACK);
 	} else {
 		spin_unlock_irqrestore(
 			&vfe32_ctrl->share_ctrl->stop_flag_lock, flags);
 		/* this is from reset command. */
-		vfe32_reset_internal_variables(vfe32_ctrl);
-		if (vfe32_ctrl->share_ctrl->vfe_reset_flag) {
-			vfe32_ctrl->share_ctrl->vfe_reset_flag = false;
-			msm_camera_io_w(0x7F80,
-				vfe32_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		} else {
-			/* reload all write masters. (frame & line)*/
-			msm_camera_io_w(0x7FFF,
-				vfe32_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		}
+		vfe32_set_default_reg_values(vfe32_ctrl);
+
+		/* reload all write masters. (frame & line)*/
+		msm_camera_io_w(0x7FFF,
+			vfe32_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 		complete(&vfe32_ctrl->share_ctrl->reset_complete);
 	}
 }
@@ -4155,19 +3370,12 @@ static void vfe32_process_camif_sof_irq(
 {
 	if (vfe32_ctrl->share_ctrl->operation_mode &
 		VFE_OUTPUTS_RAW) {
-		if (atomic_cmpxchg(
-			&vfe32_ctrl->share_ctrl->pix0_update_ack_pending,
-					1, 0) == 1) {
-			vfe32_ctrl->share_ctrl->comp_output_mode |=
-				(vfe32_ctrl->share_ctrl->outpath.output_mode
-				& ~(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-					VFE32_OUTPUT_MODE_TERTIARY3));
+		if (vfe32_ctrl->share_ctrl->start_ack_pending) {
 			vfe32_send_isp_msg(&vfe32_ctrl->subdev,
 				vfe32_ctrl->share_ctrl->vfeFrameId,
-				MSG_ID_PIX0_UPDATE_ACK);
+				MSG_ID_START_ACK);
+			vfe32_ctrl->share_ctrl->start_ack_pending = FALSE;
 		}
-
 		vfe32_ctrl->share_ctrl->vfe_capture_count--;
 		/* if last frame to be captured: */
 		if (vfe32_ctrl->share_ctrl->vfe_capture_count == 0) {
@@ -4188,14 +3396,7 @@ static void vfe32_process_camif_sof_irq(
 		return;
 	}
 	if (vfe32_ctrl->vfe_sof_count_enable)
-	{
 		vfe32_ctrl->share_ctrl->vfeFrameId++;
-//LGE_UPDATE_S 0828 add messages to debug timeout error yt.jeon@lge.com
-		if (vfe32_ctrl->share_ctrl->vfeFrameId < 15) {
-			pr_err("%s: SOF frame id %d\n", __func__, vfe32_ctrl->share_ctrl->vfeFrameId);
-		}
-//LGE_UPDATE_E 0828 add messages to debug timeout error yt.jeon@lge.com		
-	}
 
 	vfe32_send_isp_msg(&vfe32_ctrl->subdev,
 		vfe32_ctrl->share_ctrl->vfeFrameId, MSG_ID_SOF_ACK);
@@ -4214,22 +3415,16 @@ static void vfe32_process_error_irq(
 	struct axi_ctrl_t *axi_ctrl, uint32_t errStatus)
 {
 	uint32_t reg_value;
-	if (errStatus & VFE32_IMASK_VIOLATION) {
-		pr_err("vfe32_irq: violation interrupt\n");
-		reg_value = msm_camera_io_r(
-			axi_ctrl->share_ctrl->vfebase + VFE_VIOLATION_STATUS);
-		pr_err("%s: violationStatus  = 0x%x\n", __func__, reg_value);
-	}
 
 	if (errStatus & VFE32_IMASK_CAMIF_ERROR) {
 		pr_err("vfe32_irq: camif errors\n");
 		reg_value = msm_camera_io_r(
 			axi_ctrl->share_ctrl->vfebase + VFE_CAMIF_STATUS);
 		v4l2_subdev_notify(&axi_ctrl->subdev,
-			NOTIFY_VFE_ERROR, (void *)NULL);
+			NOTIFY_VFE_CAMIF_ERROR, (void *)NULL);
 		pr_err("camifStatus  = 0x%x\n", reg_value);
 		vfe32_send_isp_msg(&axi_ctrl->subdev,
-			axi_ctrl->share_ctrl->vfeFrameId, MSG_ID_VFE_ERROR);
+			axi_ctrl->share_ctrl->vfeFrameId, MSG_ID_CAMIF_ERROR);
 	}
 
 	if (errStatus & VFE32_IMASK_BHIST_OVWR)
@@ -4250,39 +3445,12 @@ static void vfe32_process_error_irq(
 	if (errStatus & VFE32_IMASK_REALIGN_BUF_CR_OVFL)
 		pr_err("vfe32_irq: realign bug CR overflow\n");
 
-	if (errStatus & VFE32_IMASK_STATS_AE_BG_BUS_OVFL)
-		pr_err("vfe32_irq: ae/bg stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_AF_BF_BUS_OVFL)
-		pr_err("vfe32_irq: af/bf stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_AWB_BUS_OVFL)
-		pr_err("vfe32_irq: awb stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_RS_BUS_OVFL)
-		pr_err("vfe32_irq: rs stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_CS_BUS_OVFL)
-		pr_err("vfe32_irq: cs stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_IHIST_BUS_OVFL)
-		pr_err("vfe32_irq: ihist stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_STATS_SKIN_BHIST_BUS_OVFL)
-		pr_err("vfe32_irq: skin/bhist stats bus overflow\n");
-
-	if (errStatus & VFE32_IMASK_BUS_OVFL_ERROR) {
-		pr_err("%s Bus Overflow. Notify error ", __func__);
-		v4l2_subdev_notify(&axi_ctrl->subdev,
-			NOTIFY_VFE_ERROR, (void *)NULL);
-		vfe32_send_isp_msg(&axi_ctrl->subdev,
-			axi_ctrl->share_ctrl->vfeFrameId, MSG_ID_VFE_ERROR);
+	if (errStatus & VFE32_IMASK_VIOLATION) {
+		pr_err("vfe32_irq: violation interrupt\n");
+		reg_value = msm_camera_io_r(
+			axi_ctrl->share_ctrl->vfebase + VFE_VIOLATION_STATUS);
+		pr_err("%s: violationStatus  = 0x%x\n", __func__, reg_value);
 	}
-}
-
-static void vfe32_process_common_error_irq(
-	struct axi_ctrl_t *axi_ctrl, uint32_t errStatus)
-{
 
 	if (errStatus & VFE32_IMASK_IMG_MAST_0_BUS_OVFL)
 		pr_err("vfe32_irq: image master 0 bus overflow\n");
@@ -4305,15 +3473,30 @@ static void vfe32_process_common_error_irq(
 	if (errStatus & VFE32_IMASK_IMG_MAST_6_BUS_OVFL)
 		pr_err("vfe32_irq: image master 6 bus overflow\n");
 
+	if (errStatus & VFE32_IMASK_STATS_AE_BG_BUS_OVFL)
+		pr_err("vfe32_irq: ae/bg stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_AF_BF_BUS_OVFL)
+		pr_err("vfe32_irq: af/bf stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_AWB_BUS_OVFL)
+		pr_err("vfe32_irq: awb stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_RS_BUS_OVFL)
+		pr_err("vfe32_irq: rs stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_CS_BUS_OVFL)
+		pr_err("vfe32_irq: cs stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_IHIST_BUS_OVFL)
+		pr_err("vfe32_irq: ihist stats bus overflow\n");
+
+	if (errStatus & VFE32_IMASK_STATS_SKIN_BHIST_BUS_OVFL)
+		pr_err("vfe32_irq: skin/bhist stats bus overflow\n");
+
 	if (errStatus & VFE32_IMASK_AXI_ERROR)
 		pr_err("vfe32_irq: axi error\n");
-
-	v4l2_subdev_notify(&axi_ctrl->subdev, NOTIFY_VFE_ERROR,
-		(void *)NULL);
-	vfe32_send_isp_msg(&axi_ctrl->subdev,
-		axi_ctrl->share_ctrl->vfeFrameId, MSG_ID_VFE_ERROR);
 }
-
 
 static void vfe_send_outmsg(
 	struct axi_ctrl_t *axi_ctrl, uint8_t msgid,
@@ -4327,20 +3510,7 @@ static void vfe_send_outmsg(
 	msg.buf.ch_paddr[0]	= ch0_paddr;
 	msg.buf.ch_paddr[1]	= ch1_paddr;
 	msg.buf.ch_paddr[2]	= ch2_paddr;
-	switch (msgid) {
-	case MSG_ID_OUTPUT_TERTIARY1:
-		msg.frameCounter = axi_ctrl->share_ctrl->rdi0FrameId;
-		break;
-	case MSG_ID_OUTPUT_TERTIARY2:
-		msg.frameCounter = axi_ctrl->share_ctrl->rdi1FrameId;
-		break;
-	case MSG_ID_OUTPUT_TERTIARY3:
-		msg.frameCounter = axi_ctrl->share_ctrl->rdi2FrameId;
-		break;
-	default:
-		msg.frameCounter = axi_ctrl->share_ctrl->vfeFrameId;
-		break;
-	}
+	msg.frameCounter = axi_ctrl->share_ctrl->vfeFrameId;
 
 	v4l2_subdev_notify(&axi_ctrl->subdev,
 			NOTIFY_VFE_MSG_OUT,
@@ -4355,6 +3525,7 @@ static void vfe32_process_output_path_irq_0(
 	uint32_t ch0_paddr, ch1_paddr, ch2_paddr;
 	uint8_t out_bool = 0;
 	struct msm_free_buf *free_buf = NULL;
+
 	free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
 		VFE_MSG_OUTPUT_PRIMARY, axi_ctrl);
 
@@ -4365,15 +3536,15 @@ static void vfe32_process_output_path_irq_0(
 	free buffer.
 	*/
 	out_bool = (
-		(axi_ctrl->share_ctrl->operation_mode &
+		(axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_THUMB_AND_MAIN ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_MAIN_AND_THUMB ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_THUMB_AND_JPEG ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_JPEG_AND_THUMB ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_RAW ||
 		axi_ctrl->share_ctrl->liveshot_state ==
 			VFE_STATE_STARTED ||
@@ -4420,15 +3591,15 @@ static void vfe32_process_output_path_irq_0(
 					axi_ctrl->share_ctrl->outpath.out0.ch2,
 					free_buf->ch_paddr[2]);
 		}
-		if (axi_ctrl->share_ctrl->operation_mode &
+		if (axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_THUMB_AND_MAIN ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_MAIN_AND_THUMB ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_THUMB_AND_JPEG ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_JPEG_AND_THUMB ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_RAW ||
 			axi_ctrl->share_ctrl->liveshot_state ==
 				VFE_STATE_STOPPED)
@@ -4456,13 +3627,13 @@ static void vfe32_process_output_path_irq_1(
 
 	free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
 		VFE_MSG_OUTPUT_SECONDARY, axi_ctrl);
-	out_bool = ((axi_ctrl->share_ctrl->operation_mode &
+	out_bool = ((axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_THUMB_AND_MAIN ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_MAIN_AND_THUMB ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_RAW ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_JPEG_AND_THUMB) &&
 			(axi_ctrl->share_ctrl->vfe_capture_count <= 1)) ||
 				free_buf;
@@ -4502,13 +3673,13 @@ static void vfe32_process_output_path_irq_1(
 					axi_ctrl->share_ctrl->outpath.out1.ch2,
 					free_buf->ch_paddr[2]);
 		}
-		if (axi_ctrl->share_ctrl->operation_mode &
+		if (axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_THUMB_AND_MAIN ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_MAIN_AND_THUMB ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_RAW ||
-			axi_ctrl->share_ctrl->operation_mode &
+			axi_ctrl->share_ctrl->operation_mode ==
 				VFE_OUTPUTS_JPEG_AND_THUMB)
 			axi_ctrl->share_ctrl->outpath.out1.capture_cnt--;
 
@@ -4531,12 +3702,10 @@ static void vfe32_process_output_path_irq_rdi0(
 	/* this must be rdi image output. */
 	struct msm_free_buf *free_buf = NULL;
 	/*RDI0*/
-	CDBG("rdi0 out irq\n");
 	if (axi_ctrl->share_ctrl->operation_mode & VFE_OUTPUTS_RDI0) {
 		free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
 			VFE_MSG_OUTPUT_TERTIARY1, axi_ctrl);
-		if (axi_ctrl->share_ctrl->outpath.out2.capture_cnt > 0 ||
-							free_buf) {
+		if (free_buf) {
 			ping_pong = msm_camera_io_r(axi_ctrl->
 				share_ctrl->vfebase +
 				VFE_BUS_PING_PONG_STATUS);
@@ -4549,14 +3718,11 @@ static void vfe32_process_output_path_irq_rdi0(
 			pr_debug("%s ch0 = 0x%x\n",
 				__func__, ch0_paddr);
 
-			if (free_buf)
-				vfe32_put_ch_addr(ping_pong,
-					axi_ctrl->share_ctrl->vfebase,
-					axi_ctrl->share_ctrl->outpath.out2.ch0,
-					free_buf->ch_paddr[0]);
-			if (axi_ctrl->share_ctrl->outpath.out2.capture_cnt == 1)
-				axi_ctrl->share_ctrl->
-					outpath.out2.capture_cnt = 0;
+			/* Y channel */
+			vfe32_put_ch_addr(ping_pong,
+				axi_ctrl->share_ctrl->vfebase,
+				axi_ctrl->share_ctrl->outpath.out2.ch0,
+				free_buf->ch_paddr[0]);
 
 			vfe_send_outmsg(axi_ctrl,
 				MSG_ID_OUTPUT_TERTIARY1, ch0_paddr,
@@ -4565,7 +3731,7 @@ static void vfe32_process_output_path_irq_rdi0(
 
 		} else {
 			axi_ctrl->share_ctrl->outpath.out2.frame_drop_cnt++;
-			CDBG("path_irq_2 irq - no free buffer for rdi0!\n");
+			pr_err("path_irq_2 irq - no free buffer for rdi0!\n");
 		}
 	}
 }
@@ -4578,12 +3744,10 @@ static void vfe32_process_output_path_irq_rdi1(
 	/* this must be rdi image output. */
 	struct msm_free_buf *free_buf = NULL;
 	/*RDI1*/
-	CDBG("rdi1 out irq\n");
 	if (axi_ctrl->share_ctrl->operation_mode & VFE_OUTPUTS_RDI1) {
 		free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
 			VFE_MSG_OUTPUT_TERTIARY2, axi_ctrl);
-		if (axi_ctrl->share_ctrl->outpath.out3.capture_cnt > 0 ||
-							free_buf) {
+		if (free_buf) {
 			ping_pong = msm_camera_io_r(axi_ctrl->
 				share_ctrl->vfebase +
 				VFE_BUS_PING_PONG_STATUS);
@@ -4595,15 +3759,11 @@ static void vfe32_process_output_path_irq_rdi1(
 			pr_debug("%s ch0 = 0x%x\n",
 				__func__, ch0_paddr);
 
-			if (free_buf)
-				vfe32_put_ch_addr(ping_pong,
-					axi_ctrl->share_ctrl->vfebase,
-					axi_ctrl->share_ctrl->outpath.out3.ch0,
-					free_buf->ch_paddr[0]);
-			if (axi_ctrl->share_ctrl->
-					outpath.out3.capture_cnt == 1)
-				axi_ctrl->share_ctrl->
-				outpath.out3.capture_cnt = 0;
+			/* Y channel */
+			vfe32_put_ch_addr(ping_pong,
+				axi_ctrl->share_ctrl->vfebase,
+				axi_ctrl->share_ctrl->outpath.out3.ch0,
+				free_buf->ch_paddr[0]);
 
 			vfe_send_outmsg(axi_ctrl,
 				MSG_ID_OUTPUT_TERTIARY2, ch0_paddr,
@@ -4611,48 +3771,7 @@ static void vfe32_process_output_path_irq_rdi1(
 				axi_ctrl->share_ctrl->outpath.out3.inst_handle);
 		} else {
 			axi_ctrl->share_ctrl->outpath.out3.frame_drop_cnt++;
-			CDBG("path_irq irq - no free buffer for rdi1!\n");
-		}
-	}
-}
-
-static void vfe32_process_output_path_irq_rdi2(
-	struct axi_ctrl_t *axi_ctrl)
-{
-	uint32_t ping_pong;
-	uint32_t ch0_paddr = 0;
-	/* this must be rdi image output. */
-	struct msm_free_buf *free_buf = NULL;
-	/*RDI2*/
-	CDBG("rdi2 out irq\n");
-	if (axi_ctrl->share_ctrl->operation_mode & VFE_OUTPUTS_RDI2) {
-		free_buf = vfe32_check_free_buffer(VFE_MSG_OUTPUT_IRQ,
-			VFE_MSG_OUTPUT_TERTIARY3, axi_ctrl);
-		if (free_buf) {
-			ping_pong = msm_camera_io_r(axi_ctrl->
-				share_ctrl->vfebase +
-				VFE_BUS_PING_PONG_STATUS);
-
-			/* Y channel */
-			ch0_paddr = vfe32_get_ch_addr(ping_pong,
-				axi_ctrl->share_ctrl->vfebase,
-				axi_ctrl->share_ctrl->outpath.out4.ch0);
-			pr_debug("%s ch0 = 0x%x\n",
-				__func__, ch0_paddr);
-
-			/* Y channel */
-			vfe32_put_ch_addr(ping_pong,
-				axi_ctrl->share_ctrl->vfebase,
-				axi_ctrl->share_ctrl->outpath.out4.ch0,
-				free_buf->ch_paddr[0]);
-
-			vfe_send_outmsg(axi_ctrl,
-				MSG_ID_OUTPUT_TERTIARY3, ch0_paddr,
-				0, 0,
-				axi_ctrl->share_ctrl->outpath.out4.inst_handle);
-		} else {
-			axi_ctrl->share_ctrl->outpath.out4.frame_drop_cnt++;
-			CDBG("path_irq irq - no free buffer for rdi2!\n");
+			pr_err("path_irq irq - no free buffer for rdi1!\n");
 		}
 	}
 }
@@ -5141,10 +4260,6 @@ static void vfe32_process_irq(
 		CDBG("irq	rdi1 regUpdateIrq\n");
 		vfe32_process_rdi1_reg_update_irq(vfe32_ctrl);
 		break;
-	case VFE_IRQ_STATUS1_RDI2_REG_UPDATE:
-		CDBG("irq	rdi2 regUpdateIrq\n");
-		vfe32_process_rdi2_reg_update_irq(vfe32_ctrl);
-		break;
 	case VFE_IMASK_WHILE_STOPPING_1:
 		CDBG("irq	resetAckIrq\n");
 		vfe32_process_reset_irq(vfe32_ctrl);
@@ -5273,40 +4388,24 @@ static void axi32_do_tasklet(unsigned long data)
 				(void *)VFE_IRQ_STATUS1_RDI1_REG_UPDATE);
 
 		if (qcmd->vfeInterruptStatus1 &
-				VFE_IRQ_STATUS1_RDI2_REG_UPDATE_MASK)
-			v4l2_subdev_notify(&vfe32_ctrl->subdev,
-				NOTIFY_VFE_IRQ,
-				(void *)VFE_IRQ_STATUS1_RDI2_REG_UPDATE);
-
-		if (qcmd->vfeInterruptStatus1 &
 				VFE_IMASK_WHILE_STOPPING_1)
 			v4l2_subdev_notify(&vfe32_ctrl->subdev,
 				NOTIFY_VFE_IRQ,
 				(void *)VFE_IMASK_WHILE_STOPPING_1);
 
-		if (atomic_read(&axi_ctrl->share_ctrl->handle_common_irq)) {
-			if (qcmd->vfeInterruptStatus1 &
-					VFE32_IMASK_COMMON_ERROR_ONLY_1) {
-				pr_err("irq	errorIrq\n");
-				vfe32_process_common_error_irq(
-					axi_ctrl,
-					qcmd->vfeInterruptStatus1 &
-					VFE32_IMASK_COMMON_ERROR_ONLY_1);
-			}
-
+		if (atomic_read(&axi_ctrl->share_ctrl->handle_axi_irq))
 			v4l2_subdev_notify(&axi_ctrl->subdev,
 				NOTIFY_AXI_IRQ,
 				(void *)qcmd->vfeInterruptStatus0);
-		}
 
 		if (atomic_read(&axi_ctrl->share_ctrl->vstate)) {
 			if (qcmd->vfeInterruptStatus1 &
-					VFE32_IMASK_VFE_ERROR_ONLY_1) {
+					VFE32_IMASK_ERROR_ONLY_1) {
 				pr_err("irq	errorIrq\n");
 				vfe32_process_error_irq(
 					axi_ctrl,
 					qcmd->vfeInterruptStatus1 &
-					VFE32_IMASK_VFE_ERROR_ONLY_1);
+					VFE32_IMASK_ERROR_ONLY_1);
 			}
 
 			/* then process stats irq. */
@@ -5445,7 +4544,7 @@ int msm_axi_subdev_isr_routine(struct v4l2_subdev *sd,
 
 static long vfe_stats_bufq_sub_ioctl(
 	struct vfe32_ctrl_type *vfe_ctrl,
-	struct msm_vfe_cfg_cmd *cmd, void *ion_client, int domain_num)
+	struct msm_vfe_cfg_cmd *cmd, void *ion_client)
 {
 	long rc = 0;
 	switch (cmd->cmd_type) {
@@ -5494,7 +4593,7 @@ static long vfe_stats_bufq_sub_ioctl(
 	rc = vfe_ctrl->stats_ops.enqueue_buf(
 			&vfe_ctrl->stats_ctrl,
 			(struct msm_stats_buf_info *)cmd->value,
-			vfe_ctrl->stats_ops.client, domain_num);
+			vfe_ctrl->stats_ops.client);
 	break;
 	case VFE_CMD_STATS_FLUSH_BUFQ:
 	{
@@ -5528,7 +4627,7 @@ static long vfe_stats_bufq_sub_ioctl(
 			rc = -EINVAL ;
 			goto end;
 		}
-		rc = vfe32_stats_unregbuf(vfe_ctrl, req_buf, domain_num);
+		rc = vfe32_stats_unregbuf(vfe_ctrl, req_buf);
 	}
 	break;
 	default:
@@ -5554,8 +4653,6 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 	void *data;
 
 	long rc = 0;
-	struct vfe_cmd_stats_buf *scfg = NULL;
-	struct vfe_cmd_stats_ack *sack = NULL;
 
 	if (!vfe32_ctrl->share_ctrl->vfebase) {
 		pr_err("%s: base address unmapped\n", __func__);
@@ -5583,7 +4680,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 	case VFE_CMD_STATS_UNREGBUF:
 		/* for easy porting put in one envelope */
 		rc = vfe_stats_bufq_sub_ioctl(vfe32_ctrl,
-				cmd, vfe_params->data, pmctl->domain_num);
+				cmd, vfe_params->data);
 		return rc;
 	default:
 		if (cmd->cmd_type != CMD_CONFIG_PING_ADDR &&
@@ -5598,8 +4695,8 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 		cmd->cmd_type != CMD_STATS_BG_BUF_RELEASE &&
 		cmd->cmd_type != CMD_STATS_BF_BUF_RELEASE &&
 		cmd->cmd_type != CMD_STATS_BHIST_BUF_RELEASE &&
-		cmd->cmd_type != CMD_VFE_PIX_SOF_COUNT_UPDATE &&
-		cmd->cmd_type != CMD_VFE_COUNT_PIX_SOF_ENABLE) {
+		cmd->cmd_type != CMD_VFE_SOF_COUNT_UPDATE &&
+		cmd->cmd_type != CMD_VFE_COUNT_SOF_ENABLE) {
 			if (copy_from_user(&vfecmd,
 					(void __user *)(cmd->value),
 					sizeof(vfecmd))) {
@@ -5618,14 +4715,6 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 						__func__, cmd->cmd_type);
 					return -EFAULT;
 				}
-				sack = kmalloc(sizeof(struct vfe_cmd_stats_ack),
-							GFP_ATOMIC);
-				if (!sack) {
-					pr_err("%s: no mem for cmd->cmd_type = %d",
-					 __func__, cmd->cmd_type);
-					return -ENOMEM;
-				}
-				sack->nextStatsBuf = *(uint32_t *)data;
 			}
 		}
 	}
@@ -5655,7 +4744,6 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 			(cmd->cmd_type == CMD_STATS_RS_ENABLE)    ||
 			(cmd->cmd_type == CMD_STATS_CS_ENABLE)    ||
 			(cmd->cmd_type == CMD_STATS_AEC_ENABLE)) {
-				scfg = NULL;
 				/* individual */
 				goto vfe32_config_done;
 		}
@@ -5679,7 +4767,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 	case CMD_GENERAL:
 		rc = vfe32_proc_general(pmctl, &vfecmd, vfe32_ctrl);
 	break;
-	case CMD_VFE_COUNT_PIX_SOF_ENABLE: {
+	case CMD_VFE_COUNT_SOF_ENABLE: {
 		int enable = *((int *)cmd->value);
 		if (enable)
 			vfe32_ctrl->vfe_sof_count_enable = TRUE;
@@ -5687,7 +4775,7 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 			vfe32_ctrl->vfe_sof_count_enable = false;
 	}
 	break;
-	case CMD_VFE_PIX_SOF_COUNT_UPDATE:
+	case CMD_VFE_SOF_COUNT_UPDATE:
 		if (!vfe32_ctrl->vfe_sof_count_enable)
 			vfe32_ctrl->share_ctrl->vfeFrameId =
 			*((uint32_t *)vfe_params->data);
@@ -5725,8 +4813,6 @@ static long msm_vfe_subdev_ioctl(struct v4l2_subdev *sd,
 	break;
 	}
 vfe32_config_done:
-	kfree(scfg);
-	kfree(sack);
 	CDBG("%s done: rc = %d\n", __func__, (int) rc);
 	return rc;
 }
@@ -5743,9 +4829,6 @@ static int msm_axi_subdev_s_crystal_freq(struct v4l2_subdev *sd,
 	int rc = 0;
 	int round_rate;
 	struct axi_ctrl_t *axi_ctrl = v4l2_get_subdevdata(sd);
-
-	if (axi_ctrl->share_ctrl->dual_enabled)
-		return rc;
 
 	round_rate = clk_round_rate(axi_ctrl->vfe_clk[0], freq);
 	if (rc < 0) {
@@ -5771,22 +4854,17 @@ static const struct v4l2_subdev_ops msm_vfe_subdev_ops = {
 	.core = &msm_vfe_subdev_core_ops,
 };
 
-int msm_axi_subdev_init(struct v4l2_subdev *sd,
-	uint8_t dual_enabled)
+int msm_axi_subdev_init(struct v4l2_subdev *sd)
 {
 	int rc = 0;
 	struct axi_ctrl_t *axi_ctrl = v4l2_get_subdevdata(sd);
-	struct msm_cam_media_controller *mctl =
-		v4l2_get_subdev_hostdata(sd);
+	struct msm_cam_media_controller *mctl;
+	mctl = v4l2_get_subdev_hostdata(sd);
 	if (mctl == NULL) {
+		pr_err("%s: mctl is NULL\n", __func__);
 		rc = -EINVAL;
 		goto mctl_failed;
 	}
-
-	axi_ctrl->share_ctrl->axi_ref_cnt++;
-	if (axi_ctrl->share_ctrl->axi_ref_cnt > 1)
-		return rc;
-	axi_ctrl->share_ctrl->dual_enabled = dual_enabled;
 	spin_lock_init(&axi_ctrl->tasklet_lock);
 	INIT_LIST_HEAD(&axi_ctrl->tasklet_q);
 	spin_lock_init(&axi_ctrl->share_ctrl->sd_notify_lock);
@@ -5812,30 +4890,10 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd,
 	if (rc < 0)
 		goto clk_enable_failed;
 
-#ifdef CONFIG_MSM_IOMMU
-	rc = iommu_attach_device(mctl->domain, axi_ctrl->iommu_ctx_imgwr);
-	if (rc < 0) {
-		pr_err("%s: imgwr attach failed rc = %d\n", __func__, rc);
-		rc = -ENODEV;
-		goto device_imgwr_attach_failed;
-	}
-	rc = iommu_attach_device(mctl->domain, axi_ctrl->iommu_ctx_misc);
-	if (rc < 0) {
-		pr_err("%s: misc attach failed rc = %d\n", __func__, rc);
-		rc = -ENODEV;
-		goto device_misc_attach_failed;
-	}
-#endif
-
 	msm_camio_bus_scale_cfg(
 		mctl->sdata->pdata->cam_bus_scale_table, S_INIT);
-
-	if (axi_ctrl->share_ctrl->dual_enabled)
-		msm_camio_bus_scale_cfg(
-			mctl->sdata->pdata->cam_bus_scale_table, S_DUAL);
-	else
-		msm_camio_bus_scale_cfg(
-			mctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
+	msm_camio_bus_scale_cfg(
+		mctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
 
 	if (msm_camera_io_r(
 		axi_ctrl->share_ctrl->vfebase + V32_GET_HW_VERSION_OFF) ==
@@ -5844,21 +4902,9 @@ int msm_axi_subdev_init(struct v4l2_subdev *sd,
 	else
 		axi_ctrl->share_ctrl->register_total = VFE33_REGISTER_TOTAL;
 
-	spin_lock_init(&axi_ctrl->share_ctrl->stop_flag_lock);
-	spin_lock_init(&axi_ctrl->share_ctrl->update_ack_lock);
-	spin_lock_init(&axi_ctrl->share_ctrl->start_ack_lock);
-
 	enable_irq(axi_ctrl->vfeirq->start);
 
 	return rc;
-
-#ifdef CONFIG_MSM_IOMMU
-device_misc_attach_failed:
-	iommu_detach_device(mctl->domain, axi_ctrl->iommu_ctx_imgwr);
-device_imgwr_attach_failed:
-#endif
-	msm_cam_clk_enable(&axi_ctrl->pdev->dev, vfe32_clk_info,
-			axi_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info), 0);
 clk_enable_failed:
 	if (axi_ctrl->fs_vfe)
 		regulator_disable(axi_ctrl->fs_vfe);
@@ -5866,6 +4912,7 @@ fs_failed:
 	iounmap(axi_ctrl->share_ctrl->vfebase);
 	axi_ctrl->share_ctrl->vfebase = NULL;
 remap_failed:
+	disable_irq(axi_ctrl->vfeirq->start);
 mctl_failed:
 	return rc;
 }
@@ -5876,18 +4923,21 @@ int msm_vfe_subdev_init(struct v4l2_subdev *sd)
 	struct vfe32_ctrl_type *vfe32_ctrl =
 		(struct vfe32_ctrl_type *)v4l2_get_subdevdata(sd);
 
+	spin_lock_init(&vfe32_ctrl->share_ctrl->stop_flag_lock);
+	spin_lock_init(&vfe32_ctrl->share_ctrl->abort_lock);
 	spin_lock_init(&vfe32_ctrl->state_lock);
+	spin_lock_init(&vfe32_ctrl->share_ctrl->update_ack_lock);
+	spin_lock_init(&vfe32_ctrl->share_ctrl->start_ack_lock);
 	spin_lock_init(&vfe32_ctrl->stats_bufq_lock);
 
 	vfe32_ctrl->update_linear = false;
 	vfe32_ctrl->update_rolloff = false;
 	vfe32_ctrl->update_la = false;
 	vfe32_ctrl->update_gamma = false;
-	vfe32_ctrl->vfe_sof_count_enable = true;
+	vfe32_ctrl->vfe_sof_count_enable = false;
 	vfe32_ctrl->hfr_mode = HFR_MODE_OFF;
 
-	memset(&vfe32_ctrl->stats_ctrl, 0,
-		sizeof(struct msm_stats_bufq_ctrl));
+	memset(&vfe32_ctrl->stats_ctrl, 0, sizeof(struct msm_stats_bufq_ctrl));
 	memset(&vfe32_ctrl->stats_ops, 0, sizeof(struct msm_stats_ops));
 
 	return rc;
@@ -5902,20 +4952,10 @@ void msm_axi_subdev_release(struct v4l2_subdev *sd)
 		pr_err("%s: base address unmapped\n", __func__);
 		return;
 	}
-	pr_err("%s called\n", __func__); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */
-	CDBG("%s, free_irq\n", __func__);
-	axi_ctrl->share_ctrl->axi_ref_cnt--;
-	if (axi_ctrl->share_ctrl->axi_ref_cnt > 0)
-		return;
 
-	axi_clear_all_interrupts(axi_ctrl->share_ctrl);
-	axi_ctrl->share_ctrl->dual_enabled = 0;
+	CDBG("%s, free_irq\n", __func__);
 	disable_irq(axi_ctrl->vfeirq->start);
 	tasklet_kill(&axi_ctrl->vfe32_tasklet);
-#ifdef CONFIG_MSM_IOMMU
-	iommu_detach_device(pmctl->domain, axi_ctrl->iommu_ctx_misc);
-	iommu_detach_device(pmctl->domain, axi_ctrl->iommu_ctx_imgwr);
-#endif
 	msm_cam_clk_enable(&axi_ctrl->pdev->dev, vfe32_clk_info,
 			axi_ctrl->vfe_clk, ARRAY_SIZE(vfe32_clk_info), 0);
 	if (axi_ctrl->fs_vfe)
@@ -5929,27 +4969,20 @@ void msm_axi_subdev_release(struct v4l2_subdev *sd)
 
 	msm_camio_bus_scale_cfg(
 		pmctl->sdata->pdata->cam_bus_scale_table, S_EXIT);
-	pr_err("%s called X\n", __func__); /* LGE_CHANGE, patch for IOMMU page fault, 2012.09.06, jungryoul.choi@lge.com */		
-
 }
 
 void msm_vfe_subdev_release(struct v4l2_subdev *sd)
 {
 	struct vfe32_ctrl_type *vfe32_ctrl =
 		(struct vfe32_ctrl_type *)v4l2_get_subdevdata(sd);
-	CDBG("vfe subdev release %p\n",
-		vfe32_ctrl->share_ctrl->vfebase);
+	if (!vfe32_ctrl->share_ctrl->vfebase)
+		vfe32_ctrl->share_ctrl->vfebase = NULL;
 }
 
 void axi_abort(struct axi_ctrl_t *axi_ctrl)
 {
 	uint8_t  axi_busy_flag = true;
-	unsigned long flags;
 	/* axi halt command. */
-
-	spin_lock_irqsave(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
-	axi_ctrl->share_ctrl->stop_ack_pending  = TRUE;
-	spin_unlock_irqrestore(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
 	msm_camera_io_w(AXI_HALT,
 		axi_ctrl->share_ctrl->vfebase + VFE_AXI_CMD);
 	wmb();
@@ -5975,17 +5008,13 @@ void axi_abort(struct axi_ctrl_t *axi_ctrl)
 	* to the command register using the barrier */
 	msm_camera_io_w_mb(VFE_RESET_UPON_STOP_CMD,
 		axi_ctrl->share_ctrl->vfebase + VFE_GLOBAL_RESET);
-	if (axi_ctrl->share_ctrl->sync_abort)
-		wait_for_completion_interruptible(
-			&axi_ctrl->share_ctrl->reset_complete);
 }
 
 int axi_config_buffers(struct axi_ctrl_t *axi_ctrl,
 	struct msm_camera_vfe_params_t vfe_params)
 {
 	uint16_t vfe_mode = axi_ctrl->share_ctrl->current_mode
-			& ~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|
-				VFE_OUTPUTS_RDI2);
+			& ~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1);
 	int rc = 0;
 	switch (vfe_params.cmd_type) {
 	case AXI_CMD_PREVIEW:
@@ -6016,11 +5045,7 @@ int axi_config_buffers(struct axi_ctrl_t *axi_ctrl,
 			rc = configure_pingpong_buffers(
 				VFE_MSG_START, VFE_MSG_OUTPUT_TERTIARY2,
 				axi_ctrl);
-		if (axi_ctrl->share_ctrl->current_mode &
-				VFE_OUTPUTS_RDI2)
-			rc = configure_pingpong_buffers(
-				VFE_MSG_START, VFE_MSG_OUTPUT_TERTIARY3,
-				axi_ctrl);
+
 		if (rc < 0) {
 			pr_err("%s error configuring pingpong buffers for preview",
 				__func__);
@@ -6087,58 +5112,39 @@ int axi_config_buffers(struct axi_ctrl_t *axi_ctrl,
 		}
 		break;
 	case AXI_CMD_CAPTURE:
-		if (vfe_mode) {
-			if (axi_ctrl->share_ctrl->current_mode ==
-				VFE_OUTPUTS_JPEG_AND_THUMB ||
-			axi_ctrl->share_ctrl->current_mode ==
-				VFE_OUTPUTS_THUMB_AND_JPEG) {
+		if (axi_ctrl->share_ctrl->current_mode ==
+			VFE_OUTPUTS_JPEG_AND_THUMB ||
+		axi_ctrl->share_ctrl->current_mode ==
+			VFE_OUTPUTS_THUMB_AND_JPEG) {
 
-				/* Configure primary channel for JPEG */
-				rc = configure_pingpong_buffers(
-					VFE_MSG_JPEG_CAPTURE,
-					VFE_MSG_OUTPUT_PRIMARY,
-					axi_ctrl);
-			} else {
-				/* Configure primary channel */
-				rc = configure_pingpong_buffers(
-					VFE_MSG_CAPTURE,
-					VFE_MSG_OUTPUT_PRIMARY,
-					axi_ctrl);
-			}
-			if (rc < 0) {
-				pr_err("%s error configuring pingpong buffers for primary output",
-					__func__);
-				rc = -EINVAL;
-				goto config_done;
-			}
-			/* Configure secondary channel */
+			/* Configure primary channel for JPEG */
 			rc = configure_pingpong_buffers(
-					VFE_MSG_CAPTURE,
-					VFE_MSG_OUTPUT_SECONDARY,
-					axi_ctrl);
-			if (rc < 0) {
-				pr_err("%s error configuring pingpong buffers for secondary output",
-					__func__);
-				rc = -EINVAL;
-				goto config_done;
-			}
+				VFE_MSG_JPEG_CAPTURE,
+				VFE_MSG_OUTPUT_PRIMARY,
+				axi_ctrl);
+		} else {
+			/* Configure primary channel */
+			rc = configure_pingpong_buffers(
+				VFE_MSG_CAPTURE,
+				VFE_MSG_OUTPUT_PRIMARY,
+				axi_ctrl);
 		}
-
-		if (axi_ctrl->share_ctrl->current_mode &
-				VFE_OUTPUTS_RDI0)
-			rc = configure_pingpong_buffers(
-				VFE_MSG_CAPTURE, VFE_MSG_OUTPUT_TERTIARY1,
+		if (rc < 0) {
+			pr_err("%s error configuring pingpong buffers for primary output",
+				__func__);
+			rc = -EINVAL;
+			goto config_done;
+		}
+		/* Configure secondary channel */
+		rc = configure_pingpong_buffers(
+				VFE_MSG_CAPTURE, VFE_MSG_OUTPUT_SECONDARY,
 				axi_ctrl);
-		if (axi_ctrl->share_ctrl->current_mode &
-				VFE_OUTPUTS_RDI1)
-			rc = configure_pingpong_buffers(
-				VFE_MSG_CAPTURE, VFE_MSG_OUTPUT_TERTIARY2,
-				axi_ctrl);
-		if (axi_ctrl->share_ctrl->current_mode &
-			VFE_OUTPUTS_RDI2)
-			rc = configure_pingpong_buffers(
-				VFE_MSG_CAPTURE, VFE_MSG_OUTPUT_TERTIARY3,
-				axi_ctrl);
+		if (rc < 0) {
+			pr_err("%s error configuring pingpong buffers for secondary output",
+				__func__);
+			rc = -EINVAL;
+			goto config_done;
+		}
 		break;
 	default:
 		rc = -EINVAL;
@@ -6152,103 +5158,107 @@ config_done:
 void axi_start(struct msm_cam_media_controller *pmctl,
 	struct axi_ctrl_t *axi_ctrl, struct msm_camera_vfe_params_t vfe_params)
 {
-	int rc = 0, bus_vector_idx = 0;
-	uint32_t reg_update = 0;
-	uint32_t vfe_mode =
-		(axi_ctrl->share_ctrl->current_mode &
-               ~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2));
-       pr_err("axi start = %d\n",
-               axi_ctrl->share_ctrl->current_mode);
-
+	uint32_t irq_comp_mask = 0, irq_mask = 0;
+	int rc = 0;
 	rc = axi_config_buffers(axi_ctrl, vfe_params);
 	if (rc < 0)
 		return;
 
 	switch (vfe_params.cmd_type) {
 	case AXI_CMD_PREVIEW:
-		if (!axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
 		break;
 	case AXI_CMD_CAPTURE:
 	case AXI_CMD_RAW_CAPTURE:
-		if (!axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table, S_CAPTURE);
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_CAPTURE);
 		break;
 	case AXI_CMD_RECORD:
-		if (cpu_is_msm8930() || cpu_is_msm8930aa()) {
-			if (axi_ctrl->share_ctrl->current_mode &
-				VFE_OUTPUTS_PREVIEW_AND_VIDEO
-			|| axi_ctrl->share_ctrl->current_mode &
-				VFE_OUTPUTS_VIDEO_AND_PREVIEW)
-				bus_vector_idx = S_VIDEO;
-			else
-				bus_vector_idx = S_ADV_VIDEO;
-		} else {
-			bus_vector_idx = S_VIDEO;
-		}
-		if (!axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table,
-			bus_vector_idx);
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_VIDEO);
 		return;
 	case AXI_CMD_ZSL:
-		if (!axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table, S_ZSL);
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_ZSL);
 		break;
 	case AXI_CMD_LIVESHOT:
-		if (!axi_ctrl->share_ctrl->dual_enabled)
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table, S_LIVESHOT);
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_LIVESHOT);
 		return;
 	default:
 		return;
 	}
-	axi_enable_wm_irq(axi_ctrl->share_ctrl);
+
+	irq_comp_mask =
+		msm_camera_io_r(axi_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_COMP_MASK);
+
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_PRIMARY) {
+		irq_comp_mask |= (
+			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch0 |
+			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch1);
+	} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+			   VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
+		irq_comp_mask |= (
+			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch0 |
+			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch1 |
+			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch2);
+	}
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_SECONDARY) {
+		irq_comp_mask |= (
+			0x1 << (axi_ctrl->share_ctrl->outpath.out1.ch0 + 8) |
+			0x1 << (axi_ctrl->share_ctrl->outpath.out1.ch1 + 8));
+	} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
+		irq_comp_mask |= (
+			0x1 << (axi_ctrl->share_ctrl->outpath.out1.ch0 + 8) |
+			0x1 << (axi_ctrl->share_ctrl->outpath.out1.ch1 + 8) |
+			0x1 << (axi_ctrl->share_ctrl->outpath.out1.ch2 + 8));
+	}
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
+		VFE32_OUTPUT_MODE_TERTIARY1) {
+		irq_mask = msm_camera_io_r(axi_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_0);
+		irq_mask |= (0x1 << (axi_ctrl->share_ctrl->outpath.out2.ch0 +
+			VFE_WM_OFFSET));
+		msm_camera_io_w(irq_mask, axi_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_0);
+	}
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
+		VFE32_OUTPUT_MODE_TERTIARY2) {
+		irq_mask = msm_camera_io_r(axi_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_0);
+		irq_mask |= (0x1 << (axi_ctrl->share_ctrl->outpath.out3.ch0 +
+			VFE_WM_OFFSET));
+		msm_camera_io_w(irq_mask, axi_ctrl->share_ctrl->vfebase +
+			VFE_IRQ_MASK_0);
+	}
+
+	msm_camera_io_w(irq_comp_mask,
+		axi_ctrl->share_ctrl->vfebase + VFE_IRQ_COMP_MASK);
 
 	switch (vfe_params.cmd_type) {
-	case AXI_CMD_RAW_CAPTURE:
-		msm_camera_io_w((
-			0x1 << axi_ctrl->share_ctrl->outpath.out0.ch0),
-			axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
-			+ vfe32_AXI_WM_CFG[axi_ctrl->
-			share_ctrl->outpath.out0.ch0]);
-		break;
 	case AXI_CMD_PREVIEW: {
-		switch (vfe_mode) {
+		uint16_t operation_mode =
+		(axi_ctrl->share_ctrl->operation_mode &
+		~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1));
+
+		switch (operation_mode) {
 		case VFE_OUTPUTS_PREVIEW:
 		case VFE_OUTPUTS_PREVIEW_AND_VIDEO:
 			if (axi_ctrl->share_ctrl->outpath.output_mode &
 				VFE32_OUTPUT_MODE_PRIMARY) {
-				msm_camera_io_w((
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out0.ch0 |
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out0.ch1),
-					axi_ctrl->share_ctrl->vfebase +
-							VFE_BUS_CMD);
 				msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
 					+ vfe32_AXI_WM_CFG[axi_ctrl->
 					share_ctrl->outpath.out0.ch0]);
 				msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
 					+ vfe32_AXI_WM_CFG[axi_ctrl->
 					share_ctrl->outpath.out0.ch1]);
-
-
 			} else if (axi_ctrl->share_ctrl->outpath.output_mode &
 					VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-				msm_camera_io_w((
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out0.ch0 |
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out0.ch1 |
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out0.ch2),
-					axi_ctrl->share_ctrl->vfebase +
-							VFE_BUS_CMD);
 				msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
 					+ vfe32_AXI_WM_CFG[axi_ctrl->
 					share_ctrl->outpath.out0.ch0]);
@@ -6263,13 +5273,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 		default:
 			if (axi_ctrl->share_ctrl->outpath.output_mode &
 				VFE32_OUTPUT_MODE_SECONDARY) {
-				msm_camera_io_w((
-					0x1 << axi_ctrl->share_ctrl->
-						outpath.out1.ch0 |
-					0x1 << axi_ctrl->share_ctrl->
-						outpath.out1.ch1),
-					axi_ctrl->share_ctrl->vfebase +
-						VFE_BUS_CMD);
 				msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
 					+ vfe32_AXI_WM_CFG[axi_ctrl->
 					share_ctrl->outpath.out1.ch0]);
@@ -6278,15 +5281,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 					share_ctrl->outpath.out1.ch1]);
 			} else if (axi_ctrl->share_ctrl->outpath.output_mode &
 				VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-				msm_camera_io_w((
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out1.ch0 |
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out1.ch1 |
-					0x1 << axi_ctrl->share_ctrl->
-							outpath.out1.ch2),
-					axi_ctrl->share_ctrl->vfebase +
-							VFE_BUS_CMD);
 				msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase
 					+ vfe32_AXI_WM_CFG[axi_ctrl->
 					share_ctrl->outpath.out1.ch0]);
@@ -6304,10 +5298,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 	default:
 		if (axi_ctrl->share_ctrl->outpath.output_mode &
 			VFE32_OUTPUT_MODE_PRIMARY) {
-			msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out0.ch0 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out0.ch1),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 			msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 				vfe32_AXI_WM_CFG[axi_ctrl->
 				share_ctrl->outpath.out0.ch0]);
@@ -6316,11 +5306,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 				share_ctrl->outpath.out0.ch1]);
 		} else if (axi_ctrl->share_ctrl->outpath.output_mode &
 				VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
-			msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out0.ch0 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out0.ch1 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out0.ch2),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 			msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 				vfe32_AXI_WM_CFG[axi_ctrl->
 				share_ctrl->outpath.out0.ch0]);
@@ -6334,10 +5319,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 
 		if (axi_ctrl->share_ctrl->outpath.output_mode &
 			VFE32_OUTPUT_MODE_SECONDARY) {
-			msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out1.ch0 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out1.ch1),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 			msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 				vfe32_AXI_WM_CFG[axi_ctrl->
 				share_ctrl->outpath.out1.ch0]);
@@ -6346,11 +5327,6 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 				share_ctrl->outpath.out1.ch1]);
 		} else if (axi_ctrl->share_ctrl->outpath.output_mode &
 			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
-			msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out1.ch0 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out1.ch1 |
-				0x1 << axi_ctrl->share_ctrl->outpath.out1.ch2),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
 			msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 				vfe32_AXI_WM_CFG[axi_ctrl->
 				share_ctrl->outpath.out1.ch0]);
@@ -6363,159 +5339,168 @@ void axi_start(struct msm_cam_media_controller *pmctl,
 		}
 		break;
 	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0) {
-		axi_ctrl->share_ctrl->outpath.out2.capture_cnt =
-						vfe_params.capture_count;
-		axi_ctrl->share_ctrl->rdi0_capture_count =
-						vfe_params.capture_count;
-		msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out2.ch0),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		msm_camera_io_w(0x1, axi_ctrl->share_ctrl->vfebase +
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0)
+		msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
 			outpath.out2.ch0]);
-
-		pr_err("%s: axi_ctrl->share_ctrl->outpath.out2.ch0 = %d\n",__func__, axi_ctrl->share_ctrl->outpath.out2.ch0);
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1) {
-		axi_ctrl->share_ctrl->outpath.out3.capture_cnt =
-						vfe_params.capture_count;
-		axi_ctrl->share_ctrl->rdi1_capture_count =
-						vfe_params.capture_count;
-		msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out3.ch0),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		msm_camera_io_w(0x1, axi_ctrl->share_ctrl->vfebase +
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1)
+		msm_camera_io_w(1, axi_ctrl->share_ctrl->vfebase +
 			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
 			outpath.out3.ch0]);
-
-		pr_err("%s: axi_ctrl->share_ctrl->outpath.out3.ch0 = %d\n",__func__, axi_ctrl->share_ctrl->outpath.out3.ch0);
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI2) {
-		axi_ctrl->share_ctrl->outpath.out4.capture_cnt =
-						vfe_params.capture_count;
-		axi_ctrl->share_ctrl->rdi2_capture_count =
-						vfe_params.capture_count;
-		msm_camera_io_w((
-				0x1 << axi_ctrl->share_ctrl->outpath.out4.ch0),
-				axi_ctrl->share_ctrl->vfebase + VFE_BUS_CMD);
-		msm_camera_io_w(0x3, axi_ctrl->share_ctrl->vfebase +
-			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
-			outpath.out4.ch0]);
-		pr_err("%s: axi_ctrl->share_ctrl->outpath.out4.ch0 = %d\n",__func__, axi_ctrl->share_ctrl->outpath.out4.ch0);
-	}
-
-	axi_enable_irq(axi_ctrl->share_ctrl);
-
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0) {
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi0_update_ack_pending,
-				0, 1))
-			reg_update |= 0x2;
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1) {
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi1_update_ack_pending,
-				0, 1))
-			reg_update |= 0x4;
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI2) {
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi2_update_ack_pending,
-				0, 1))
-			reg_update |= 0x8;
-	}
-
-	if (vfe_mode) {
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->pix0_update_ack_pending,
-				0, 1))
-			reg_update |= 0x1;
-	}
-
-	msm_camera_io_w_mb(reg_update,
-			axi_ctrl->share_ctrl->vfebase +
-			VFE_REG_UPDATE_CMD);
-	axi_ctrl->share_ctrl->operation_mode |=
-		axi_ctrl->share_ctrl->current_mode;
+	atomic_set(&axi_ctrl->share_ctrl->handle_axi_irq, 1);
 }
 
 void axi_stop(struct msm_cam_media_controller *pmctl,
 	struct axi_ctrl_t *axi_ctrl, struct msm_camera_vfe_params_t vfe_params)
 {
 	uint32_t reg_update = 0;
-	uint32_t vfe_mode =
+	unsigned long flags;
+	uint32_t operation_mode =
 	axi_ctrl->share_ctrl->current_mode & ~(VFE_OUTPUTS_RDI0|
-		VFE_OUTPUTS_RDI1|VFE_OUTPUTS_RDI2);
-	int bus_vector_idx = 0;
+		VFE_OUTPUTS_RDI1);
 
 	switch (vfe_params.cmd_type) {
 	case AXI_CMD_PREVIEW:
 	case AXI_CMD_CAPTURE:
 	case AXI_CMD_RAW_CAPTURE:
 	case AXI_CMD_ZSL:
-		axi_ctrl->share_ctrl->cmd_type = vfe_params.cmd_type;
 		break;
 	case AXI_CMD_RECORD:
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_PREVIEW);
 		return;
 	case AXI_CMD_LIVESHOT:
-		if (!axi_ctrl->share_ctrl->dual_enabled) {
-			bus_vector_idx = S_VIDEO;
-
-			if (cpu_is_msm8930() || cpu_is_msm8930aa())
-				bus_vector_idx = S_ADV_VIDEO;
-
-			msm_camio_bus_scale_cfg(
-			pmctl->sdata->pdata->cam_bus_scale_table,
-			bus_vector_idx);
-		}
+		msm_camio_bus_scale_cfg(
+		pmctl->sdata->pdata->cam_bus_scale_table, S_VIDEO);
 		return;
 	default:
 		return;
 	}
 
-	if (axi_ctrl->share_ctrl->stop_immediately) {
-		axi_disable_irq(axi_ctrl->share_ctrl,
-			axi_ctrl->share_ctrl->current_mode);
-		axi_stop_process(axi_ctrl->share_ctrl);
-		return;
+	if (!axi_ctrl->share_ctrl->skip_abort) {
+		atomic_set(&axi_ctrl->share_ctrl->handle_axi_irq, 0);
+		axi_disable_irq(axi_ctrl);
 	}
 
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0) {
+	spin_lock_irqsave(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
+	axi_ctrl->share_ctrl->stop_ack_pending  = TRUE;
+	spin_unlock_irqrestore(&axi_ctrl->share_ctrl->stop_flag_lock, flags);
+	switch (vfe_params.cmd_type) {
+	case AXI_CMD_PREVIEW: {
+		switch (operation_mode) {
+		case VFE_OUTPUTS_PREVIEW:
+		case VFE_OUTPUTS_PREVIEW_AND_VIDEO:
+			if (axi_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_PRIMARY) {
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out0.ch0]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out0.ch1]);
+			} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+					VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out0.ch0]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out0.ch1]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out0.ch2]);
+			}
+			break;
+		default:
+			if (axi_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_SECONDARY) {
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out1.ch0]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out1.ch1]);
+			} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out1.ch0]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out1.ch1]);
+				msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase
+					+ vfe32_AXI_WM_CFG[axi_ctrl->
+					share_ctrl->outpath.out1.ch2]);
+			}
+			break;
+			}
+		}
+		break;
+	default:
+		if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_PRIMARY) {
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+		} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+				VFE32_OUTPUT_MODE_PRIMARY_ALL_CHNLS) {
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out0.ch0]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out0.ch1]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out0.ch2]);
+		}
+
+		if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_SECONDARY) {
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out1.ch0]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out1.ch1]);
+		} else if (axi_ctrl->share_ctrl->outpath.output_mode &
+			VFE32_OUTPUT_MODE_SECONDARY_ALL_CHNLS) {
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out1.ch0]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out1.ch1]);
+			msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
+				vfe32_AXI_WM_CFG[axi_ctrl->
+				share_ctrl->outpath.out1.ch2]);
+		}
+		break;
+	}
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0)
 		msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
 			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
-				outpath.out2.ch0]);
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi0_update_ack_pending,
-				0, 2))
-			reg_update |= 0x2;
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1) {
+			outpath.out2.ch0]);
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1)
 		msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
 			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
-				outpath.out3.ch0]);
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi1_update_ack_pending,
-				0, 2))
-			reg_update |= 0x4;
-	}
-	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI2) {
-		msm_camera_io_w(0, axi_ctrl->share_ctrl->vfebase +
-			vfe32_AXI_WM_CFG[axi_ctrl->share_ctrl->
-				outpath.out4.ch0]);
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->rdi2_update_ack_pending,
-				0, 2))
-			reg_update |= 0x8;
-	}
-	if (vfe_mode) {
-		if (!atomic_cmpxchg(
-			&axi_ctrl->share_ctrl->pix0_update_ack_pending,
-				0, 2))
-			reg_update |= 0x1;
-	}
+			outpath.out3.ch0]);
+
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI0)
+		reg_update |= 0x2;
+	if (axi_ctrl->share_ctrl->current_mode & VFE_OUTPUTS_RDI1)
+		reg_update |= 0x4;
+
+	if (operation_mode)
+		reg_update |= 0x1;
 	msm_camera_io_w_mb(reg_update,
 		axi_ctrl->share_ctrl->vfebase + VFE_REG_UPDATE_CMD);
+	if (!axi_ctrl->share_ctrl->skip_abort)
+		axi_abort(axi_ctrl);
+
 }
 
 static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
@@ -6526,6 +5511,7 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 	struct msm_cam_media_controller *pmctl =
 		(struct msm_cam_media_controller *)v4l2_get_subdev_hostdata(sd);
 	int rc = 0, vfe_cmd_type = 0, rdi_mode = 0;
+	unsigned long flags;
 
 	if (!axi_ctrl->share_ctrl->vfebase) {
 		pr_err("%s: base address unmapped\n", __func__);
@@ -6549,10 +5535,8 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 		}
 	}
 
-	pr_err("[RDI] %s: cfgcmd.cmd_type = %d \n", __func__,cfgcmd.cmd_type );
-
 	vfe_cmd_type = (cfgcmd.cmd_type & ~(CMD_AXI_CFG_TERT1|
-		CMD_AXI_CFG_TERT2 | CMD_AXI_CFG_TERT3));
+		CMD_AXI_CFG_TERT2));
 	switch (cfgcmd.cmd_type) {
 	case CMD_AXI_CFG_TERT1:{
 		uint32_t *axio = NULL;
@@ -6587,22 +5571,6 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 		kfree(axio);
 		return rc;
 		}
-	case CMD_AXI_CFG_TERT3:{
-		uint32_t *axio = NULL;
-		axio = kmalloc(vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length,
-				GFP_ATOMIC);
-		if (!axio)
-			return -ENOMEM;
-
-		if (copy_from_user(axio, (void __user *)(vfecmd.value),
-				vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length)) {
-			kfree(axio);
-			return -EFAULT;
-		}
-		vfe32_config_axi(axi_ctrl, OUTPUT_TERT3, axio);
-		kfree(axio);
-		return rc;
-		}
 	case CMD_AXI_CFG_TERT1|CMD_AXI_CFG_TERT2:{
 		uint32_t *axio = NULL;
 		axio = kmalloc(vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length,
@@ -6619,62 +5587,11 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 		kfree(axio);
 		return rc;
 		}
-	case CMD_AXI_CFG_TERT1|CMD_AXI_CFG_TERT3:{
-		uint32_t *axio = NULL;
-		axio = kmalloc(vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length,
-				GFP_ATOMIC);
-		if (!axio)
-			return -ENOMEM;
-
-		if (copy_from_user(axio, (void __user *)(vfecmd.value),
-				vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length)) {
-			kfree(axio);
-			return -EFAULT;
-		}
-		vfe32_config_axi(axi_ctrl, OUTPUT_TERT1|OUTPUT_TERT3, axio);
-		kfree(axio);
-		return rc;
-		}
-	case CMD_AXI_CFG_TERT2|CMD_AXI_CFG_TERT3:{
-		uint32_t *axio = NULL;
-		axio = kmalloc(vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length,
-				GFP_ATOMIC);
-		if (!axio)
-			return -ENOMEM;
-
-		if (copy_from_user(axio, (void __user *)(vfecmd.value),
-				vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length)) {
-			kfree(axio);
-			return -EFAULT;
-		}
-		vfe32_config_axi(axi_ctrl, OUTPUT_TERT2|OUTPUT_TERT3, axio);
-		kfree(axio);
-		return rc;
-		}
-	case CMD_AXI_CFG_TERT1|CMD_AXI_CFG_TERT2|CMD_AXI_CFG_TERT3:{
-		uint32_t *axio = NULL;
-		axio = kmalloc(vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length,
-				GFP_ATOMIC);
-		if (!axio)
-			return -ENOMEM;
-
-		if (copy_from_user(axio, (void __user *)(vfecmd.value),
-				vfe32_cmd[VFE_CMD_AXI_OUT_CFG].length)) {
-			kfree(axio);
-			return -EFAULT;
-		}
-		vfe32_config_axi(axi_ctrl, OUTPUT_TERT1|OUTPUT_TERT2|
-			OUTPUT_TERT3, axio);
-		kfree(axio);
-		return rc;
-		}
 	default:
 		if (cfgcmd.cmd_type & CMD_AXI_CFG_TERT1)
 			rdi_mode |= OUTPUT_TERT1;
 		if (cfgcmd.cmd_type & CMD_AXI_CFG_TERT2)
 			rdi_mode |= OUTPUT_TERT2;
-		if (cfgcmd.cmd_type & CMD_AXI_CFG_TERT3)
-			rdi_mode |= OUTPUT_TERT3;
 	}
 	switch (vfe_cmd_type) {
 	case CMD_AXI_CFG_PRIM: {
@@ -6790,6 +5707,11 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 		}
 		axi_ctrl->share_ctrl->current_mode =
 			vfe_params.operation_mode;
+		spin_lock_irqsave(&axi_ctrl->share_ctrl->abort_lock, flags);
+		axi_ctrl->share_ctrl->skip_abort =
+			vfe_params.skip_abort;
+		spin_unlock_irqrestore(&axi_ctrl->share_ctrl->abort_lock,
+			flags);
 		axi_start(pmctl, axi_ctrl, vfe_params);
 		}
 		break;
@@ -6802,28 +5724,16 @@ static int msm_axi_config(struct v4l2_subdev *sd, void __user *arg)
 		}
 		axi_ctrl->share_ctrl->current_mode =
 			vfe_params.operation_mode;
-		axi_ctrl->share_ctrl->stop_immediately =
-			vfe_params.stop_immediately;
+		spin_lock_irqsave(&axi_ctrl->share_ctrl->abort_lock, flags);
+		axi_ctrl->share_ctrl->skip_abort =
+			vfe_params.skip_abort;
+		spin_unlock_irqrestore(&axi_ctrl->share_ctrl->abort_lock,
+			flags);
 		axi_stop(pmctl, axi_ctrl, vfe_params);
 		}
 		break;
-	case CMD_AXI_RESET: {
-		struct msm_camera_vfe_params_t vfe_params;
-		if (copy_from_user(&vfe_params,
-				(void __user *)(vfecmd.value),
-				sizeof(struct msm_camera_vfe_params_t))) {
-				return -EFAULT;
-		}
-		axi_reset(axi_ctrl, vfe_params);
-		}
-		break;
-	case CMD_AXI_ABORT:
-		if (copy_from_user(&axi_ctrl->share_ctrl->sync_abort,
-				(void __user *)(vfecmd.value),
-				sizeof(uint8_t))) {
-				return -EFAULT;
-		}
-		axi_abort(axi_ctrl);
+	case CMD_AXI_RESET:
+		axi_reset(axi_ctrl);
 		break;
 	default:
 		pr_err("%s Unsupported AXI configuration %x ", __func__,
@@ -6837,12 +5747,12 @@ static void msm_axi_process_irq(struct v4l2_subdev *sd, void *arg)
 {
 	struct axi_ctrl_t *axi_ctrl = v4l2_get_subdevdata(sd);
 	uint32_t irqstatus = (uint32_t) arg;
+	unsigned long flags;
 
 	if (!axi_ctrl->share_ctrl->vfebase) {
 		pr_err("%s: base address unmapped\n", __func__);
 		return;
 	}
-
 	/* next, check output path related interrupts. */
 	if (irqstatus &
 		VFE_IRQ_STATUS0_IMAGE_COMPOSIT_DONE0_MASK) {
@@ -6855,84 +5765,52 @@ static void msm_axi_process_irq(struct v4l2_subdev *sd, void *arg)
 		vfe32_process_output_path_irq_1(axi_ctrl);
 	}
 
-	if (axi_ctrl->share_ctrl->comp_output_mode &
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
 		VFE32_OUTPUT_MODE_TERTIARY1)
 		if (irqstatus & (0x1 << (axi_ctrl->share_ctrl->outpath.out2.ch0
 			+ VFE_WM_OFFSET)))
 			vfe32_process_output_path_irq_rdi0(axi_ctrl);
-	if (axi_ctrl->share_ctrl->comp_output_mode &
+	if (axi_ctrl->share_ctrl->outpath.output_mode &
 		VFE32_OUTPUT_MODE_TERTIARY2)
 		if (irqstatus & (0x1 << (axi_ctrl->share_ctrl->outpath.out3.ch0
 			+ VFE_WM_OFFSET)))
 			vfe32_process_output_path_irq_rdi1(axi_ctrl);
-	if (axi_ctrl->share_ctrl->comp_output_mode &
-		VFE32_OUTPUT_MODE_TERTIARY3)
-		if (irqstatus & (0x1 << (axi_ctrl->share_ctrl->outpath.out4.ch0
-			+ VFE_WM_OFFSET)))
-			vfe32_process_output_path_irq_rdi2(axi_ctrl);
 
 	/* in snapshot mode if done then send
 	snapshot done message */
 	if (
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_THUMB_AND_MAIN ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_MAIN_AND_THUMB ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_THUMB_AND_JPEG ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_JPEG_AND_THUMB ||
-		axi_ctrl->share_ctrl->operation_mode &
+		axi_ctrl->share_ctrl->operation_mode ==
 			VFE_OUTPUTS_RAW) {
 		if ((axi_ctrl->share_ctrl->outpath.out0.capture_cnt == 0)
 				&& (axi_ctrl->share_ctrl->outpath.out1.
 				capture_cnt == 0)) {
-			uint32_t mode =
-				(axi_ctrl->share_ctrl->operation_mode &
-				~(VFE_OUTPUTS_RDI0|VFE_OUTPUTS_RDI1|
-				  VFE_OUTPUTS_RDI2));
-			uint16_t output_mode =
-			axi_ctrl->share_ctrl->comp_output_mode &
-				~(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-				  VFE32_OUTPUT_MODE_TERTIARY3);
-			if (!axi_ctrl->share_ctrl->dual_enabled)
-				msm_camera_io_w_mb(
-					CAMIF_COMMAND_STOP_IMMEDIATELY,
-					axi_ctrl->share_ctrl->vfebase +
-					VFE_CAMIF_COMMAND);
-			axi_disable_wm_irq(axi_ctrl->share_ctrl, output_mode);
-			axi_disable_irq(axi_ctrl->share_ctrl, mode);
+			msm_camera_io_w_mb(
+				CAMIF_COMMAND_STOP_IMMEDIATELY,
+				axi_ctrl->share_ctrl->vfebase +
+				VFE_CAMIF_COMMAND);
+			spin_lock_irqsave(&axi_ctrl->share_ctrl->abort_lock,
+				flags);
+			if (axi_ctrl->share_ctrl->skip_abort) {
+				spin_unlock_irqrestore(&axi_ctrl->share_ctrl->
+					abort_lock, flags);
+				atomic_set(&axi_ctrl->share_ctrl->
+					handle_axi_irq, 0);
+				axi_disable_irq(axi_ctrl);
+			} else
+				spin_unlock_irqrestore(&axi_ctrl->share_ctrl->
+					abort_lock, flags);
 			vfe32_send_isp_msg(&axi_ctrl->subdev,
 				axi_ctrl->share_ctrl->vfeFrameId,
-				MSG_ID_PIX0_UPDATE_ACK);
-			axi_ctrl->share_ctrl->outpath.out0.
-				capture_cnt = -1;
-			axi_ctrl->share_ctrl->outpath.out1.
-				capture_cnt = -1;
-			axi_ctrl->share_ctrl->comp_output_mode &=
-				(VFE32_OUTPUT_MODE_TERTIARY1|
-				VFE32_OUTPUT_MODE_TERTIARY2|
-				 VFE32_OUTPUT_MODE_TERTIARY3);
+				MSG_ID_SNAPSHOT_DONE);
 		}
-	}
-
-	if (axi_ctrl->share_ctrl->outpath.out2.capture_cnt == 0) {
-		axi_ctrl->share_ctrl->comp_output_mode &=
-				~VFE32_OUTPUT_MODE_TERTIARY1;
-		axi_ctrl->share_ctrl->outpath.out2.capture_cnt = -1;
-	}
-
-	if (axi_ctrl->share_ctrl->outpath.out3.capture_cnt == 0) {
-		axi_ctrl->share_ctrl->comp_output_mode &=
-				~VFE32_OUTPUT_MODE_TERTIARY2;
-		axi_ctrl->share_ctrl->outpath.out3.capture_cnt = -1;
-	}
-
-	if (axi_ctrl->share_ctrl->outpath.out4.capture_cnt == 0) {
-		axi_ctrl->share_ctrl->comp_output_mode &=
-				~VFE32_OUTPUT_MODE_TERTIARY3;
-		axi_ctrl->share_ctrl->outpath.out4.capture_cnt = -1;
 	}
 }
 
@@ -6988,16 +5866,8 @@ static long msm_axi_subdev_ioctl(struct v4l2_subdev *sd,
 {
 	int rc = -ENOIOCTLCMD;
 	switch (cmd) {
-	case VIDIOC_MSM_AXI_INIT: {
-		uint8_t dual_enabled;
-		if (copy_from_user(&dual_enabled,
-				(void __user *)(arg),
-				sizeof(uint8_t))) {
-				rc = -EFAULT;
-				break;
-		}
-		rc = msm_axi_subdev_init(sd, dual_enabled);
-		}
+	case VIDIOC_MSM_AXI_INIT:
+		rc = msm_axi_subdev_init(sd);
 		break;
 	case VIDIOC_MSM_AXI_CFG:
 		rc = msm_axi_config(sd, arg);
@@ -7014,29 +5884,6 @@ static long msm_axi_subdev_ioctl(struct v4l2_subdev *sd,
 		msm_axi_subdev_release(sd);
 		rc = 0;
 		break;
-	case VIDIOC_MSM_AXI_RDI_COUNT_UPDATE: {
-		struct rdi_count_msg *msg = (struct rdi_count_msg *)arg;
-		struct axi_ctrl_t *axi_ctrl = v4l2_get_subdevdata(sd);
-		switch (msg->rdi_interface) {
-		case RDI_0:
-			axi_ctrl->share_ctrl->rdi0FrameId = msg->count;
-			rc = 0;
-			break;
-		case RDI_1:
-			axi_ctrl->share_ctrl->rdi1FrameId = msg->count;
-			rc = 0;
-			break;
-		case RDI_2:
-			axi_ctrl->share_ctrl->rdi2FrameId = msg->count;
-			rc = 0;
-			break;
-		default:
-			pr_err("%s: Incorrect interface sent\n", __func__);
-			rc = -EINVAL;
-			break;
-		}
-		break;
-	}
 	default:
 		pr_err("%s: command %d not found\n", __func__,
 						_IOC_NR(cmd));
@@ -7097,7 +5944,7 @@ static int __devinit vfe32_probe(struct platform_device *pdev)
 	share_ctrl->vfe32_ctrl = vfe32_ctrl;
 	axi_ctrl->share_ctrl = share_ctrl;
 	vfe32_ctrl->share_ctrl = share_ctrl;
-	axi_ctrl->share_ctrl->axi_ref_cnt = 0;
+
 	v4l2_subdev_init(&axi_ctrl->subdev, &msm_axi_subdev_ops);
 	axi_ctrl->subdev.internal_ops = &msm_axi_internal_ops;
 	axi_ctrl->subdev.flags |= V4L2_SUBDEV_FL_HAS_DEVNODE;
@@ -7202,21 +6049,6 @@ static int __devinit vfe32_probe(struct platform_device *pdev)
 		pr_err("%s Error registering irq ", __func__);
 		goto vfe32_no_resource;
 	}
-
-#ifdef CONFIG_MSM_IOMMU
-	/*get device context for IOMMU*/
-	axi_ctrl->iommu_ctx_imgwr =
-		msm_iommu_get_ctx("vfe_imgwr"); /*re-confirm*/
-	axi_ctrl->iommu_ctx_misc =
-		msm_iommu_get_ctx("vfe_misc"); /*re-confirm*/
-	if (!axi_ctrl->iommu_ctx_imgwr || !axi_ctrl->iommu_ctx_misc) {
-		release_mem_region(axi_ctrl->vfemem->start,
-			resource_size(axi_ctrl->vfemem));
-		pr_err("%s: No iommu fw context found\n", __func__);
-		rc = -ENODEV;
-		goto vfe32_no_resource;
-	}
-#endif
 
 	tasklet_init(&axi_ctrl->vfe32_tasklet,
 		axi32_do_tasklet, (unsigned long)axi_ctrl);

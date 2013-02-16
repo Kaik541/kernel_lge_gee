@@ -153,7 +153,7 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 		bool secure, struct mem_region *mregion)
 {
 	struct ion_handle *handle;
-	void *kvaddr = NULL, *phys_addr = NULL;
+	void *kvaddr, *phys_addr;
 	unsigned long size;
 	unsigned int alloc_regions = 0;
 	int rc;
@@ -170,7 +170,7 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 		goto alloc_fail;
 	}
 
-	kvaddr = ion_map_kernel(client, handle, secure ? UNCACHED : CACHED);
+	kvaddr = ion_map_kernel(client,	handle,	CACHED);
 
 	if (IS_ERR_OR_NULL(kvaddr)) {
 		WFD_MSG_ERR("Failed to get virtual addr\n");
@@ -178,23 +178,13 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 		goto alloc_fail;
 	}
 
-	if (secure) {
-		WFD_MSG_INFO("%s: calling ion_phys", __func__);
-		rc = ion_phys(client,
-			handle,
-			(unsigned long *)&phys_addr, (size_t *)&size);
-	} else {
-		WFD_MSG_INFO("%s: calling ion_map_iommu", __func__);
-		rc = ion_map_iommu(client, handle,
-				VIDEO_DOMAIN, VIDEO_MAIN_POOL, SZ_4K,
-				0, (unsigned long *)&phys_addr,
-				&size, 0, 0);
-	}
+	rc = ion_map_iommu(client, handle,
+			VIDEO_DOMAIN, VIDEO_MAIN_POOL, SZ_4K,
+			0, (unsigned long *)&phys_addr,
+			&size, 0, 0);
 
-	if (rc || !phys_addr) {
-		WFD_MSG_ERR(
-			"Failed to get physical addr, rc = %d, phys_addr = 0x%p\n",
-			rc, phys_addr);
+	if (rc) {
+		WFD_MSG_ERR("Failed to get physical addr\n");
 		goto alloc_fail;
 	} else if (size < mregion->size) {
 		WFD_MSG_ERR("Failed to map enough memory\n");
@@ -209,9 +199,7 @@ static int wfd_allocate_ion_buffer(struct ion_client *client,
 	return rc;
 alloc_fail:
 	if (!IS_ERR_OR_NULL(handle)) {
-		if (!IS_ERR_OR_NULL(kvaddr))
-			ion_unmap_kernel(client, handle);
-
+		ion_unmap_kernel(client, handle);
 		ion_free(client, handle);
 
 		mregion->kvaddr = NULL;
@@ -323,10 +311,8 @@ int wfd_allocate_input_buffers(struct wfd_device *wfd_dev,
 				(unsigned long *)&mdp_mregion->size, 0, 0);
 		}
 
-		if (rc || !mdp_mregion->paddr) {
-			WFD_MSG_ERR(
-				"Failed to map to mdp, rc = %d, paddr = 0x%p\n",
-				rc, mdp_mregion->paddr);
+		if (rc) {
+			WFD_MSG_ERR("Failed to map to mdp\n");
 			mdp_mregion->kvaddr = NULL;
 			mdp_mregion->paddr = NULL;
 			mdp_mregion->ion_handle = NULL;
@@ -338,9 +324,8 @@ int wfd_allocate_input_buffers(struct wfd_device *wfd_dev,
 		mdp_buf.kvaddr = (u32) mdp_mregion->kvaddr;
 		mdp_buf.paddr = (u32) mdp_mregion->paddr;
 
-		WFD_MSG_DBG("NOTE: mdp paddr = [%p->%p], kvaddr = %p\n",
-				mdp_mregion->paddr, (void *)
-				((int)mdp_mregion->paddr + mdp_mregion->size),
+		WFD_MSG_DBG("NOTE: mdp paddr = %p, kvaddr = %p\n",
+				mdp_mregion->paddr,
 				mdp_mregion->kvaddr);
 
 		INIT_LIST_HEAD(&mpair->list);
@@ -365,12 +350,7 @@ int wfd_allocate_input_buffers(struct wfd_device *wfd_dev,
 		WFD_MSG_ERR("Failed to allocate recon buffers\n");
 		goto alloc_fail;
 	}
-	return rc;
-
 alloc_fail:
-	kfree(mpair);
-	kfree(enc_mregion);
-	kfree(mdp_mregion);
 	return rc;
 }
 void wfd_free_input_buffers(struct wfd_device *wfd_dev,
@@ -415,7 +395,7 @@ void wfd_free_input_buffers(struct wfd_device *wfd_dev,
 				}
 			}
 
-			if (mpair->enc->paddr && !wfd_dev->secure_device)
+			if (mpair->enc->paddr)
 				ion_unmap_iommu(wfd_dev->ion_client,
 						mpair->enc->ion_handle,
 						VIDEO_DOMAIN, VIDEO_MAIN_POOL);
@@ -490,14 +470,6 @@ int wfd_vidbuf_buf_init(struct vb2_buffer *vb)
 		(struct wfd_device *)video_drvdata(priv_data);
 	struct mem_info *minfo = vb2_plane_cookie(vb, 0);
 	struct mem_region mregion;
-
-//Start LGE_BSP_CAMERA : Fixed WBT - jonghwan.ko@lge.com
-	if (minfo == NULL) {
-		WFD_MSG_ERR("not freeing buffers since allocation failed");
-		goto free_input_bufs;
-	}
-//End  LGE_BSP_CAMERA : Fixed WBT - jonghwan.ko@lge.com
-	
 	mregion.fd = minfo->fd;
 	mregion.offset = minfo->offset;
 	mregion.cookie = (u32)vb;
@@ -699,14 +671,6 @@ void wfd_vidbuf_buf_queue(struct vb2_buffer *vb)
 	struct wfd_inst *inst = (struct wfd_inst *)priv_data->private_data;
 	struct mem_region mregion;
 	struct mem_info *minfo = vb2_plane_cookie(vb, 0);
-
-//Start LGE_BSP_CAMERA : Fixed WBT - jonghwan.ko@lge.com
-	if (minfo == NULL) {
-		WFD_MSG_ERR("not freeing buffers since allocation failed");
-		return;
-	}
-//End  LGE_BSP_CAMERA : Fixed WBT - jonghwan.ko@lge.com
-	
 	mregion.fd = minfo->fd;
 	mregion.offset = minfo->offset;
 	mregion.cookie = (u32)vb;
@@ -1326,10 +1290,7 @@ static int wfd_open(struct file *filp)
 
 	WFD_MSG_DBG("wfd_open: E\n");
 	wfd_dev = video_drvdata(filp);
-	if (!wfd_dev) {
-		rc = -EINVAL;
-		goto err_dev_busy;
-	}
+
 	mutex_lock(&wfd_dev->dev_lock);
 	if (wfd_dev->in_use) {
 		WFD_MSG_ERR("Device already in use.\n");
@@ -1342,7 +1303,7 @@ static int wfd_open(struct file *filp)
 	mutex_unlock(&wfd_dev->dev_lock);
 
 	inst = kzalloc(sizeof(struct wfd_inst), GFP_KERNEL);
-	if (!inst) {
+	if (!inst || !wfd_dev) {
 		WFD_MSG_ERR("Could not allocate memory for "
 			"wfd instance\n");
 		rc = -ENOMEM;
@@ -1400,9 +1361,6 @@ err_venc:
 	v4l2_subdev_call(&wfd_dev->mdp_sdev, core, ioctl,
 				MDP_CLOSE, (void *)inst->mdp_inst);
 err_mdp_open:
-	mutex_lock(&wfd_dev->dev_lock);
-	wfd_dev->in_use = false;
-	mutex_unlock(&wfd_dev->dev_lock);
 	kfree(inst);
 err_dev_busy:
 	return rc;
@@ -1551,6 +1509,10 @@ static int __devinit __wfd_probe(struct platform_device *pdev)
 	}
 
 	wfd_priv = pdev->dev.platform_data;
+	if (wfd_priv && wfd_priv->wfd_check_mdp_iommu_split) {
+		wfd_dev->mdp_iommu_split_domain =
+			wfd_priv->wfd_check_mdp_iommu_split();
+	}
 
 	pdev->dev.platform_data = (void *) wfd_dev;
 
@@ -1594,11 +1556,6 @@ static int __devinit __wfd_probe(struct platform_device *pdev)
 		mutex_init(&wfd_dev[c].dev_lock);
 		wfd_dev[c].ion_client = ion_client;
 		wfd_dev[c].in_use = false;
-		if (wfd_priv && wfd_priv->wfd_check_mdp_iommu_split) {
-			wfd_dev[c].mdp_iommu_split_domain =
-				wfd_priv->wfd_check_mdp_iommu_split();
-		}
-
 		switch (WFD_DEVICE_NUMBER_BASE + c) {
 		case WFD_DEVICE_SECURE:
 			wfd_dev[c].secure_device = true;
