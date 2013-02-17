@@ -10,5 +10,4 @@ obj-$(CONFIG_LGE_ECO_MODE) += lge_kernel_driver.o
 obj-$(CONFIG_UPDATE_LCDC_LUT) += lge_qc_lcdc_luts.o
 obj-$(CONFIG_LCD_KCAL) += lge_kcal_ctrl.o
 #obj-$(CONFIG_LGE_CRASH_HANDLER) += lge_panic_handler.o
-obj-$(CONFIG_LGE_SUSPEND_AUTOTEST) += lge_suspend_autotest.o
 obj-$(CONFIG_MACH_LGE) += lge_blocking_monitor.o

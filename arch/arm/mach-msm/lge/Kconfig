@@ -94,16 +94,6 @@ config LGE_EARLYSUSPEND_FUNC_TIME
 	  This file shows the average and max tiem of each 
 	  earlysuspend/lateresume function.
 
-config LGE_SUSPEND_AUTOTEST
-    tristate "Test suspend/resume and earlysuspend/lateresume automatically"
-    default y
-    depends on MACH_LGE && SUSPEND && EARLYSUSPEND
-	help
-      This option will let you suspend your machine, and make it wake up
-	  a few seconds later using an timer automatically.  
-	  Enable this with a kernel parameter by sysfs.
-
-
 config LGE_BITE_RESET
 	tristate "Disable PS_HOLD reset"
 	default n

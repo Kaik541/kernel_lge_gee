@@ -41,6 +41,7 @@
 #include <linux/cpu.h>
 #include <linux/notifier.h>
 #include <linux/rculist.h>
+#include <linux/coresight-stm.h>
 
 #include <asm/uaccess.h>
 
@@ -939,7 +940,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 
 
 	p = printk_buf;
-#ifdef CONFIG_LGE_HANDLE_PANIC
+#ifdef CONFIG_LGE_CRASH_HANDLER
 	store_crash_log(p);
 #endif
 
@@ -961,6 +962,8 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 			}
 		}
 	}
+
+	stm_log(OST_ENTITY_PRINTK, printk_buf, printed_len);
 
 	/*
 	 * Copy the output into log_buf. If the caller didn't provide
@@ -989,8 +992,6 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				/* Add the current time stamp */
 				char tbuf[50], *tp;
 				unsigned tlen;
-				/* LGE_S jinyoun.park@lge.com 20111027 Change kernel timestamp resolution from cpu time to current clock */
-#ifdef CONFIG_LGE_USE_CPU_CLOCK_TIMESTAMP
 				unsigned long long t;
 				unsigned long nanosec_rem;
 
@@ -999,29 +1000,7 @@ asmlinkage int vprintk(const char *fmt, va_list args)
 				tlen = sprintf(tbuf, "[%5lu.%06lu] ",
 						(unsigned long) t,
 						nanosec_rem / 1000);
-#else
-				unsigned long long t;
-				unsigned long nanosec_rem;
 
-				struct timespec time;
-				struct tm tmresult;
-
-				t = cpu_clock(printk_cpu);
-				nanosec_rem = do_div(t, 1000000000);
-
-				time = __current_kernel_time();
-				time_to_tm(time.tv_sec,sys_tz.tz_minuteswest * 60* (-1),&tmresult);
-				tlen = sprintf(tbuf, "[%5lu.%06lu / %02d-%02d %02d:%02d:%02d.%03lu] ",
-						(unsigned long) t,
-						nanosec_rem / 1000,
-						tmresult.tm_mon+1,
-						tmresult.tm_mday,
-						tmresult.tm_hour,
-						tmresult.tm_min,
-						tmresult.tm_sec,
-						(unsigned long) time.tv_nsec/1000000);
-#endif
-				/* LGE_E jinyoun.park@lge.com 20111027 Change kernel timestamp resolution from cpu time to current clock */
 				for (tp = tbuf; tp < tbuf + tlen; tp++)
 					emit_log_char(*tp);
 				printed_len += tlen;
