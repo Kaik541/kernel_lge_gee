@@ -697,26 +697,25 @@ static int apq8064_change_memory_power(u64 start, u64 size,
 	return soc_change_memory_power(start, size, change_type);
 }
 
-static char prim_panel_name[PANEL_NAME_MAX_LEN];
-static char ext_panel_name[PANEL_NAME_MAX_LEN];
-
 #ifndef CONFIG_MACH_LGE
 static int ext_resolution;
 #endif
 
+static char prim_panel_name[PANEL_NAME_MAX_LEN];
+static char ext_panel_name[PANEL_NAME_MAX_LEN];
 static int __init prim_display_setup(char *param)
 {
-	if (strnlen(param, PANEL_NAME_MAX_LEN))
-		strlcpy(prim_panel_name, param, PANEL_NAME_MAX_LEN);
-	return 0;
+        if (strnlen(param, PANEL_NAME_MAX_LEN))
+                strlcpy(prim_panel_name, param, PANEL_NAME_MAX_LEN);
+        return 0;
 }
 early_param("prim_display", prim_display_setup);
 
 static int __init ext_display_setup(char *param)
 {
-	if (strnlen(param, PANEL_NAME_MAX_LEN))
-		strlcpy(ext_panel_name, param, PANEL_NAME_MAX_LEN);
-	return 0;
+        if (strnlen(param, PANEL_NAME_MAX_LEN))
+                strlcpy(ext_panel_name, param, PANEL_NAME_MAX_LEN);
+        return 0;
 }
 early_param("ext_display", ext_display_setup);
 
@@ -3713,8 +3712,8 @@ static void __init apq8064_common_init(void)
 	apq8064_init_gpiomux();
 	apq8064_i2c_init();
 	register_i2c_devices();
-	register_i2c_backlight_devices();
-	lge_add_sound_devices();   
+	lge_add_backlight_devices();;
+	lge_add_sound_devices();
 /* ehee.lee@lge.com [START] for NFC */
 #if defined(CONFIG_LGE_NFC)
 	lge_add_nfc_devices();

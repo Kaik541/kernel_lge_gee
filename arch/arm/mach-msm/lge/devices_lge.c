@@ -154,6 +154,30 @@ hw_rev_type lge_get_board_revno(void)
     return lge_bd_rev;
 }
 
+#ifdef CONFIG_LCD_KCAL
+extern int kcal_set_values(int kcal_r, int kcal_g, int kcal_b);
+static int __init display_kcal_setup(char *kcal)
+{
+        char vaild_k = 0;
+        int kcal_r = 0;
+        int kcal_g = 0;
+        int kcal_b = 0;
+
+        sscanf(kcal, "%d|%d|%d|%c", &kcal_r, &kcal_g, &kcal_b, &vaild_k );
+        pr_info("kcal is %d|%d|%d|%c\n", kcal_r, kcal_g, kcal_b, vaild_k);
+
+        if (vaild_k != 'K') {
+                pr_info("kcal not calibrated yet : %d\n", vaild_k);
+                kcal_r = kcal_g = kcal_b = 255;
+                pr_info("set to default : %d\n", kcal_r);
+        }
+
+        kcal_set_values(kcal_r, kcal_g, kcal_b);
+        return 1;
+}
+__setup("lge.kcal=", display_kcal_setup);
+#endif
+
 #ifdef CONFIG_LGE_PM
 int lge_pm_get_cable_info(struct chg_cable_info *cable_info)
 {
@@ -295,27 +319,6 @@ static int __init battery_information_setup(char *batt_info)
         return 1;
 }
 __setup("lge.batt_info=", battery_information_setup);
-#endif
-
-#ifdef CONFIG_LGE_KCAL
-int g_kcal_r = 255;
-int g_kcal_g = 255;
-int g_kcal_b = 255;
-static int __init display_kcal_setup(char *kcal)
-{
-		char vaild_k = 0;
-        sscanf(kcal, "%d|%d|%d|%c", &g_kcal_r, &g_kcal_g, &g_kcal_b, &vaild_k );
-        printk(KERN_INFO "kcal is %d|%d|%d|%c\n",
-                                        g_kcal_r, g_kcal_g, g_kcal_b, vaild_k);
-
-        if(vaild_k != 'K') {
-                printk(KERN_INFO "kcal not calibrated yet : %d\n", vaild_k);
-                g_kcal_r = g_kcal_g = g_kcal_b = 255;
-                printk(KERN_INFO "set to default : %d\n", g_kcal_r);
-        }
-        return 1;
-}
-__setup("lge.kcal=", display_kcal_setup);
 #endif
 
 /* get boot mode information from cmdline.

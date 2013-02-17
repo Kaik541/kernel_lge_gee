@@ -79,6 +79,7 @@ extern struct regulator_init_data msm8064_saw_regulator_pdata_8821_s1;
 struct mmc_platform_data;
 int __init apq8064_add_sdcc(unsigned int controller,
 		struct mmc_platform_data *plat);
+extern void __init lge_add_backlight_devices(void);
 
 #if defined(CONFIG_MACH_LGE)
 extern void __init register_i2c_backlight_devices(void);
@@ -224,5 +225,14 @@ extern struct msm_cache_dump_platform_data apq8064_cache_dump_pdata;
 #if defined(CONFIG_MACH_LGE)
 void apq8064_init_input(void);
 void __init apq8064_init_misc(void);
+
+#define I2C_SURF 1
+#define I2C_FFA  (1 << 1)
+#define I2C_RUMI (1 << 2)
+#define I2C_SIM  (1 << 3)
+#define I2C_LIQUID (1 << 4)
+#define I2C_MPQ_CDP BIT(5)
+#define I2C_MPQ_HRD BIT(6)
+#define I2C_MPQ_DTV BIT(7)
 #endif
 #endif
