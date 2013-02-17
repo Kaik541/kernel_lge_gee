@@ -165,7 +165,7 @@ static struct msm_gpiomux_config apq8064_cam_common_configs[] = {
 	},
 };
 
-#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091)
+#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091) || defined(CONFIG_IMX119)
 static struct msm_gpiomux_config apq8064_cam_2d_configs[] = {
 };
 
@@ -337,7 +337,7 @@ static struct camera_vreg_t apq_8064_front_cam_vreg[] = {
 };
 #endif
 
-#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091)
+#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091) || defined(CONFIG_IMX119)
 static struct gpio apq8064_common_cam_gpio[] = {
 	{12, GPIOF_DIR_IN, "CAMIF_I2C_DATA"},
 	{13, GPIOF_DIR_IN, "CAMIF_I2C_CLK"},
