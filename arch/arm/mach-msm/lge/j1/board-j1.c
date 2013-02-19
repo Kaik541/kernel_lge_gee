@@ -95,39 +95,36 @@
 
 #define MSM_PMEM_ADSP_SIZE         0x7800000
 #define MSM_PMEM_AUDIO_SIZE        0x4CF000
-#ifdef CONFIG_FB_MSM_HDMI_AS_PRIMARY
-#define MSM_PMEM_SIZE 0x4000000 /* 64 Mbytes */
-#else
-#define MSM_PMEM_SIZE 0x4000000 /* 64 Mbytes */
-#endif
+#define MSM_PMEM_SIZE              0x4000000 /* 64 Mbytes */
 
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
-#define HOLE_SIZE		0x20000
+#define HOLE_SIZE               0x20000
 #define MSM_CONTIG_MEM_SIZE  0x65000
 #ifdef CONFIG_MSM_IOMMU
-#define MSM_ION_MM_SIZE		0x5F00000 //came from g ics for stability issue org : 0x3800000
-#define MSM_ION_SF_SIZE		0
-#define MSM_ION_QSECOM_SIZE	0x780000 /* (7.5MB) */
-#define MSM_ION_HEAP_NUM	7
+
+#define MSM_ION_MM_SIZE         0x3800000
+#define MSM_ION_SF_SIZE         0
+#define MSM_ION_QSECOM_SIZE     0x780000 /* (7.5MB) */
+#define MSM_ION_HEAP_NUM        7
 #else
-#define MSM_ION_MM_SIZE		MSM_PMEM_ADSP_SIZE
-#define MSM_ION_SF_SIZE		MSM_PMEM_SIZE
-#define MSM_ION_QSECOM_SIZE	0x600000 /* (6MB) */
-#define MSM_ION_HEAP_NUM	8
+#define MSM_ION_MM_SIZE         MSM_PMEM_ADSP_SIZE
+#define MSM_ION_SF_SIZE         MSM_PMEM_SIZE
+#define MSM_ION_QSECOM_SIZE     0x600000 /* (6MB) */
+#define MSM_ION_HEAP_NUM        8
 #endif
-#define MSM_ION_MM_FW_SIZE	(0x200000 - HOLE_SIZE) /* (2MB - 128KB) */
-#define MSM_ION_MFC_SIZE	SZ_8K
-#define MSM_ION_AUDIO_SIZE	MSM_PMEM_AUDIO_SIZE
+#define MSM_ION_MM_FW_SIZE      (0x200000 - HOLE_SIZE) /* (2MB - 128KB) */
+#define MSM_ION_MFC_SIZE        SZ_8K
+#define MSM_ION_AUDIO_SIZE      MSM_PMEM_AUDIO_SIZE
 #else
 #define MSM_CONTIG_MEM_SIZE  0x110C000
-#define MSM_ION_HEAP_NUM	1
+#define MSM_ION_HEAP_NUM        1
 #endif
 
 #define APQ8064_FIXED_AREA_START (0xa0000000 - (MSM_ION_MM_FW_SIZE + \
-							HOLE_SIZE))
-#define MAX_FIXED_AREA_SIZE	0x10000000
-#define MSM_MM_FW_SIZE		(0x200000 - HOLE_SIZE)
-#define APQ8064_FW_START	APQ8064_FIXED_AREA_START
+                                                        HOLE_SIZE))
+#define MAX_FIXED_AREA_SIZE     0x10000000
+#define MSM_MM_FW_SIZE          (0x200000 - HOLE_SIZE)
+#define APQ8064_FW_START        APQ8064_FIXED_AREA_START
 
 #define QFPROM_RAW_FEAT_CONFIG_ROW0_MSB     (MSM_QFPROM_BASE + 0x23c)
 #define QFPROM_RAW_OEM_CONFIG_ROW0_LSB      (MSM_QFPROM_BASE + 0x220)
@@ -292,32 +289,32 @@ static int apq8064_paddr_to_memtype(unsigned int paddr)
 #ifdef CONFIG_ION_MSM
 #ifdef CONFIG_MSM_MULTIMEDIA_USE_ION
 static struct ion_cp_heap_pdata cp_mm_apq8064_ion_pdata = {
-	.permission_type = IPT_TYPE_MM_CARVEOUT,
-	.align = PAGE_SIZE,
-	.reusable = FMEM_ENABLED,
-	.mem_is_fmem = FMEM_ENABLED,
-	.fixed_position = FIXED_MIDDLE,
+        .permission_type = IPT_TYPE_MM_CARVEOUT,
+        .align = PAGE_SIZE,
+        .reusable = FMEM_ENABLED,
+        .mem_is_fmem = FMEM_ENABLED,
+        .fixed_position = FIXED_MIDDLE,
 };
 
 static struct ion_cp_heap_pdata cp_mfc_apq8064_ion_pdata = {
-	.permission_type = IPT_TYPE_MFC_SHAREDMEM,
-	.align = PAGE_SIZE,
-	.reusable = 0,
-	.mem_is_fmem = FMEM_ENABLED,
-	.fixed_position = FIXED_HIGH,
+        .permission_type = IPT_TYPE_MFC_SHAREDMEM,
+        .align = PAGE_SIZE,
+        .reusable = 0,
+        .mem_is_fmem = FMEM_ENABLED,
+        .fixed_position = FIXED_HIGH,
 };
 
 static struct ion_co_heap_pdata co_apq8064_ion_pdata = {
-	.adjacent_mem_id = INVALID_HEAP_ID,
-	.align = PAGE_SIZE,
-	.mem_is_fmem = 0,
+        .adjacent_mem_id = INVALID_HEAP_ID,
+        .align = PAGE_SIZE,
+        .mem_is_fmem = 0,
 };
 
 static struct ion_co_heap_pdata fw_co_apq8064_ion_pdata = {
-	.adjacent_mem_id = ION_CP_MM_HEAP_ID,
-	.align = SZ_128K,
-	.mem_is_fmem = FMEM_ENABLED,
-	.fixed_position = FIXED_LOW,
+        .adjacent_mem_id = ION_CP_MM_HEAP_ID,
+        .align = SZ_128K,
+        .mem_is_fmem = FMEM_ENABLED,
+        .fixed_position = FIXED_LOW,
 };
 #endif
 
@@ -443,7 +440,7 @@ static struct gpio_led pm_gpio_leds[] = {
 		.gpio			= PM8921_GPIO_PM_TO_SYS(15),
 		.name			= "led:blue",
 	},
-	
+
 };
 
 
