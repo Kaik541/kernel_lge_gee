@@ -49,7 +49,8 @@ allowed_warnings = set([
     "msm_actuator.c:14",
     "vcap_vc.c:18",
     "vcap_vc.c:19",
-    "imx091_eeprom.c:75"
+    "imx091_eeprom.c:75",
+    "bapRsnTxRx.c:222"
  ])
 
 # Capture the name of the object file, can find it.
