@@ -1462,14 +1462,11 @@ struct region_params_t {
 };
 
 struct msm_actuator_move_params_t {
-        int8_t dir;
-        int8_t sign_dir;
-        int16_t dest_step_pos;
-        int32_t num_steps;
-/* LGE_CHANGE_S, AF offset enable, 2012-09-28, sungmin.woo@lge.com */
-        int32_t af_status;
-/* LGE_CHANGE_E, AF offset enable, 2012-09-28, sungmin.woo@lge.com */
-        struct damping_params_t *ringing_params;
+	int8_t dir;
+	int8_t sign_dir;
+	int16_t dest_step_pos;
+	int32_t num_steps;
+	struct damping_params_t *ringing_params;
 };
 
 struct msm_actuator_tuning_params_t {
@@ -1542,12 +1539,6 @@ struct msm_eeprom_support {
 	uint16_t qvalue;
 };
 
-#if 1 // LGE_BSP_CAMERA::kyounghoon.noh@lge.com 2012-08-14
-struct msm_calib_ver {
-        uint16_t cal_ver; // rafal47 0813
-};
-#endif
-
 struct msm_calib_wb {
 	uint16_t r_over_g;
 	uint16_t b_over_g;
@@ -1580,14 +1571,10 @@ struct msm_calib_dpc {
 };
 
 struct msm_camera_eeprom_info_t {
-        struct msm_eeprom_support af;
-        struct msm_eeprom_support wb50;
-        struct msm_eeprom_support wb30;
-        struct msm_eeprom_support lsc50;
-        struct msm_eeprom_support lsc40;
-        struct msm_eeprom_support dpc;
-        struct msm_eeprom_support cal_ver; // Start LGE_BSP_CAMERA::kyounghoon.noh@lge.com 2012-08-14
-        struct msm_eeprom_support raw;
+	struct msm_eeprom_support af;
+	struct msm_eeprom_support wb;
+	struct msm_eeprom_support lsc;
+	struct msm_eeprom_support dpc;
 };
 
 struct msm_eeprom_cfg_data {
