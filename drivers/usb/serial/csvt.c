@@ -22,9 +22,6 @@
 #include <linux/usb/serial.h>
 #include <asm/unaligned.h>
 
-#ifdef CONFIG_LGE_EMS_CH
-#include <mach/hsic_debug_ch.h>
-#endif
 
 /* output control lines*/
 #define CSVT_CTRL_DTR		0x01
@@ -65,7 +62,6 @@ static struct usb_driver csvt_driver = {
 	.supports_autosuspend	= true,
 };
 
-/* Added for CSVT */
 #define CSVT_IFC_NUM	4
 
 static int csvt_probe(struct usb_serial *serial, const struct usb_device_id *id)
@@ -78,10 +74,6 @@ static int csvt_probe(struct usb_serial *serial, const struct usb_device_id *id)
 	if (intf->desc.bInterfaceNumber != CSVT_IFC_NUM)
 		return -ENODEV;
 
-/* Added for CSVT */
-#ifdef	LG_FW_HSIC_EMS_DEBUG
-	printk("[%s] [CSVT] bInterfaceNumber: %d \n", __func__,intf->desc.bInterfaceNumber);
-#endif
 	usb_enable_autosuspend(serial->dev);
 
 	return 0;
