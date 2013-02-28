@@ -2678,7 +2678,9 @@ static struct platform_device *common_devices[] __initdata = {
 #ifdef CONFIG_ION_MSM
 	&apq8064_ion_dev,
 #endif
+#ifdef CONFIG_MSM_WATCHDOG
 	&msm8064_device_watchdog,
+#endif
 	&msm8064_device_saw_regulator_core0,
 	&msm8064_device_saw_regulator_core1,
 	&msm8064_device_saw_regulator_core2,
@@ -3841,9 +3843,10 @@ static void __init apq8064_allocate_memory_regions(void)
 #if !defined(CONFIG_MACH_LGE)
 static void __init apq8064_sim_init(void)
 {
+#ifdef CONFIG_MSM_WATCHDOG
 	struct msm_watchdog_pdata *wdog_pdata = (struct msm_watchdog_pdata *)
 		&msm8064_device_watchdog.dev.platform_data;
-
+#endif
 	wdog_pdata->bark_time = 15000;
 	apq8064_common_init();
 	platform_add_devices(sim_devices, ARRAY_SIZE(sim_devices));
