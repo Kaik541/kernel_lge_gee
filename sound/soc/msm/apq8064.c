@@ -34,7 +34,6 @@
 #include <sound/tpa2028d.h>
 #endif
 /* 8064 machine driver */
-
 #define PM8921_GPIO_BASE		NR_GPIO_IRQS
 #define PM8921_GPIO_PM_TO_SYS(pm_gpio)  (pm_gpio - 1 + PM8921_GPIO_BASE)
 
@@ -95,33 +94,19 @@ static int msm_slim_3_rx_ch = 1;
 
 static int msm_btsco_rate = BTSCO_RATE_8KHZ;
 static int msm_btsco_ch = 1;
-
-#if 0
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-static int msm_auxpcm_rate = BTSCO_RATE_8KHZ;
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
+static int msm_hdmi_rx_ch = 2;
 
 static int rec_mode = INCALL_REC_MONO;
 
 static struct clk *codec_clk;
 static int clk_users;
 
-#ifdef CONFIG_WCD9310_MBHC
-static int msm_headset_gpios_configured;
-#endif
-
 static struct snd_soc_jack hs_jack;
 static struct snd_soc_jack button_jack;
-static atomic_t auxpcm_rsc_ref;
 
 static int apq8064_hs_detect_use_gpio = -1;
 module_param(apq8064_hs_detect_use_gpio, int, 0444);
 MODULE_PARM_DESC(apq8064_hs_detect_use_gpio, "Use GPIO for headset detection");
-
-static bool apq8064_hs_detect_extn_cable;
-module_param(apq8064_hs_detect_extn_cable, bool, 0444);
-MODULE_PARM_DESC(apq8064_hs_detect_extn_cable, "Enable extension cable feature");
 
 static bool apq8064_hs_detect_use_firmware;
 module_param(apq8064_hs_detect_use_firmware, bool, 0444);
@@ -142,7 +127,6 @@ static struct tabla_mbhc_config mbhc_cfg = {
 	.gpio = 0,
 	.gpio_irq = 0,
 	.gpio_level_insert = 1,
-	.detect_extn_cable = false,
 };
 
 static struct mutex cdc_mclk_mutex;
@@ -521,13 +505,6 @@ static const struct snd_soc_dapm_widget apq8064_dapm_widgets[] = {
 	SND_SOC_DAPM_MIC("Handset SubMic", NULL),
 #endif
 
-//[AUDIO_BSP][3rd MIC] gooyeon.jung@lge.com 2012-09-28 enable MIC_BIAS4 connected to 3rd MIC. [START]
-#if defined(CONFIG_SND_SOC_3rd_MIC_AMIC) && ( defined(CONFIG_MACH_APQ8064_GVDCM)||defined(CONFIG_MACH_APQ8064_GK_KR)||defined(CONFIG_MACH_APQ8064_GKATT) )
-	SND_SOC_DAPM_MIC("Handset 3rdMic", NULL),
-#endif
-//[AUDIO_BSP][3rd MIC] gooyeon.jung@lge.com 2012-09-28 enable MIC_BIAS4 connected to 3rd MIC. [END]
-
-
 	/*********** Digital Mics ***************/
 	SND_SOC_DAPM_MIC("Digital Mic1", NULL),
 	SND_SOC_DAPM_MIC("Digital Mic2", NULL),
@@ -555,15 +532,6 @@ static const struct snd_soc_dapm_route apq8064_common_audio_map[] = {
 	{"Ext Spk Top Neg", NULL, "LINEOUT4"},
 	{"Ext Spk Top", NULL, "LINEOUT5"},
 #endif
-
-//[AUDIO_BSP][3rd MIC] gooyeon.jung@lge.com 2012-09-28 enable MIC_BIAS4 connected to 3rd MIC. [START]
-#if defined(CONFIG_SND_SOC_3rd_MIC_AMIC) && ( defined(CONFIG_MACH_APQ8064_GVDCM)||defined(CONFIG_MACH_APQ8064_GK_KR)||defined(CONFIG_MACH_APQ8064_GKATT) )
-	{"AMIC5", NULL, "MIC BIAS4 External"},
-	{"MIC BIAS4 External", NULL, "Handset 3rdMic"},
-#endif
-//[AUDIO_BSP][3rd MIC] gooyeon.jung@lge.com 2012-09-28 enable MIC_BIAS4 connected to 3rd MIC. [END]
-
-
 	/************   Analog MIC Paths  ************/
 #ifdef CONFIG_SND_SOC_DUAL_AMIC
 	/* Handset Mic */
@@ -703,26 +671,20 @@ static const struct snd_soc_dapm_route apq8064_liquid_cdp_audio_map[] = {
 static const char *spk_function[] = {"Off", "On"};
 static const char *slim0_rx_ch_text[] = {"One", "Two"};
 static const char *slim0_tx_ch_text[] = {"One", "Two", "Three", "Four"};
+static const char *hdmi_rx_ch_text[] = {"Two", "Three", "Four", "Five",
+	"Six", "Seven", "Eight"};
 
 static const struct soc_enum msm_enum[] = {
 	SOC_ENUM_SINGLE_EXT(2, spk_function),
 	SOC_ENUM_SINGLE_EXT(2, slim0_rx_ch_text),
 	SOC_ENUM_SINGLE_EXT(4, slim0_tx_ch_text),
+	SOC_ENUM_SINGLE_EXT(7, hdmi_rx_ch_text),
 };
 
 static const char *btsco_rate_text[] = {"8000", "16000"};
 static const struct soc_enum msm_btsco_enum[] = {
 		SOC_ENUM_SINGLE_EXT(2, btsco_rate_text),
 };
-
-#if 0
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-static const char *auxpcm_rate_text[] = {"8000", "16000"};
-static const struct soc_enum msm_auxpcm_enum[] = {
-		SOC_ENUM_SINGLE_EXT(2, auxpcm_rate_text),
-};
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
 
 static int msm_slim_0_rx_ch_get(struct snd_kcontrol *kcontrol,
 	struct snd_ctl_elem_value *ucontrol)
@@ -808,37 +770,6 @@ static int msm_btsco_rate_put(struct snd_kcontrol *kcontrol,
 					msm_btsco_rate);
 	return 0;
 }
-#if 0
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-static int msm_auxpcm_rate_get(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	pr_debug("%s: msm_auxpcm_rate  = %d", __func__,
-		msm_auxpcm_rate);
-	ucontrol->value.integer.value[0] = msm_auxpcm_rate;
-	return 0;
-}
-
-static int msm_auxpcm_rate_put(struct snd_kcontrol *kcontrol,
-				struct snd_ctl_elem_value *ucontrol)
-{
-	switch (ucontrol->value.integer.value[0]) {
-	case 8000:
-		msm_auxpcm_rate = BTSCO_RATE_8KHZ;
-		break;
-	case 16000:
-		msm_auxpcm_rate = BTSCO_RATE_16KHZ;
-		break;
-	default:
-		msm_auxpcm_rate = BTSCO_RATE_8KHZ;
-		break;
-	}
-	pr_debug("%s: msm_auxpcm_rate = %d\n", __func__,
-					msm_auxpcm_rate);
-	return 0;
-}
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
 
 static int msm_incall_rec_mode_get(struct snd_kcontrol *kcontrol,
 					struct snd_ctl_elem_value *ucontrol)
@@ -857,6 +788,25 @@ static int msm_incall_rec_mode_put(struct snd_kcontrol *kcontrol,
 	return 0;
 }
 
+static int msm_hdmi_rx_ch_get(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	pr_debug("%s: msm_hdmi_rx_ch  = %d\n", __func__,
+			msm_hdmi_rx_ch);
+	ucontrol->value.integer.value[0] = msm_hdmi_rx_ch - 2;
+	return 0;
+}
+
+static int msm_hdmi_rx_ch_put(struct snd_kcontrol *kcontrol,
+	struct snd_ctl_elem_value *ucontrol)
+{
+	msm_hdmi_rx_ch = ucontrol->value.integer.value[0] + 2;
+
+	pr_debug("%s: msm_hdmi_rx_ch = %d\n", __func__,
+		msm_hdmi_rx_ch);
+	return 1;
+}
+
 static const struct snd_kcontrol_new tabla_msm_controls[] = {
 	SOC_ENUM_EXT("Speaker Function", msm_enum[0], msm_get_spk,
 		msm_set_spk),
@@ -870,33 +820,9 @@ static const struct snd_kcontrol_new tabla_msm_controls[] = {
 			msm_incall_rec_mode_get, msm_incall_rec_mode_put),
 	SOC_ENUM_EXT("SLIM_3_RX Channels", msm_enum[1],
 		msm_slim_3_rx_ch_get, msm_slim_3_rx_ch_put),
-#if 0
-	SOC_ENUM_EXT("AUX PCM SampleRate", msm_auxpcm_enum[0],
-		msm_auxpcm_rate_get, msm_auxpcm_rate_put),
-#endif
+	SOC_ENUM_EXT("HDMI_RX Channels", msm_enum[3],
+		msm_hdmi_rx_ch_get, msm_hdmi_rx_ch_put),
 };
-
-#if 0
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-static const struct snd_kcontrol_new auxpcm_rate_mixer_controls[] = {
-	SOC_ENUM_EXT("AUX PCM SampleRate", msm_auxpcm_enum[0],
-		msm_auxpcm_rate_get, msm_auxpcm_rate_put),
-};
-
-static int msm_auxpcm_init(struct snd_soc_pcm_runtime *rtd)
-{
-       int err = 0;
-       struct snd_soc_platform *platform = rtd->platform;
-
-       err = snd_soc_add_platform_controls(platform,
-               auxpcm_rate_mixer_controls,
-               ARRAY_SIZE(auxpcm_rate_mixer_controls));
-       if (err < 0)
-               return err;
-       return 0;
-}
-//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
 
 static void *def_tabla_mbhc_cal(void)
 {
@@ -1250,8 +1176,8 @@ static int msm_slimbus_4_hw_params(struct snd_pcm_substream *substream,
 
 static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 {
-#ifdef CONFIG_WCD9310_MBHC
 	int err;
+#ifndef CONFIG_SWITCH_FSA8008
 	uint32_t revision;
 #endif
 	struct snd_soc_codec *codec = rtd->codec;
@@ -1271,7 +1197,7 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_add_routes(dapm, apq8064_common_audio_map,
 		ARRAY_SIZE(apq8064_common_audio_map));
 
-	if (machine_is_apq8064_mtp() || machine_is_apq8064_gk()) {
+	if (machine_is_apq8064_mtp() || machine_is_apq8064_mako()) {
 		snd_soc_dapm_add_routes(dapm, apq8064_mtp_audio_map,
 			ARRAY_SIZE(apq8064_mtp_audio_map));
 	} else  {
@@ -1290,11 +1216,9 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 
 	snd_soc_dapm_sync(dapm);
 
-#ifdef CONFIG_WCD9310_MBHC
 	err = snd_soc_jack_new(codec, "Headset Jack",
-			       (SND_JACK_HEADSET |  SND_JACK_LINEOUT |
-				SND_JACK_OC_HPHL |  SND_JACK_OC_HPHR |
-				SND_JACK_UNSUPPORTED),
+			       (SND_JACK_HEADSET | SND_JACK_OC_HPHL |
+				SND_JACK_OC_HPHR | SND_JACK_UNSUPPORTED),
 			       &hs_jack);
 	if (err) {
 		pr_err("failed to create new jack\n");
@@ -1307,11 +1231,10 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 		pr_err("failed to create new jack\n");
 		return err;
 	}
-#endif
 
 	codec_clk = clk_get(cpu_dai->dev, "osr_clk");
 
-#ifdef CONFIG_WCD9310_MBHC
+#ifndef CONFIG_SWITCH_FSA8008
 	/* APQ8064 Rev 1.1 CDP and Liquid have mechanical switch */
 	revision = socinfo_get_version();
 	if (apq8064_hs_detect_use_gpio != -1) {
@@ -1349,8 +1272,6 @@ static int msm_audrx_init(struct snd_soc_pcm_runtime *rtd)
 			return err;
 		}
 		gpio_direction_input(JACK_DETECT_GPIO);
-		if (apq8064_hs_detect_extn_cable)
-			mbhc_cfg.detect_extn_cable = true;
 	} else
 		pr_debug("%s: Not using MBHC mechanical switch\n", __func__);
 
@@ -1476,6 +1397,7 @@ static int msm_hdmi_be_hw_params_fixup(struct snd_soc_pcm_runtime *rtd,
 			channels->min, channels->max);
 
 	rate->min = rate->max = 48000;
+	channels->min = channels->max = msm_hdmi_rx_ch;
 
 	return 0;
 }
@@ -1504,16 +1426,8 @@ static int msm_auxpcm_be_params_fixup(struct snd_soc_pcm_runtime *rtd,
 	struct snd_interval *channels = hw_param_interval(params,
 					SNDRV_PCM_HW_PARAM_CHANNELS);
 
-#if 0 //QCT ORG
 	/* PCM only supports mono output with 8khz sample rate */
 	rate->min = rate->max = 8000;
-#else
-	//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-	pr_debug("%s: auxpcm rate set = %d\n", __func__, msm_btsco_rate);
-	//pr_debug("%s: auxpcm rate set = %d\n", __func__, msm_auxpcm_rate);
-	rate->min = rate->max = msm_btsco_rate; //msm_auxpcm_rate;
-	//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
 	channels->min = channels->max = 1;
 
 	return 0;
@@ -1602,10 +1516,8 @@ static int msm_auxpcm_startup(struct snd_pcm_substream *substream)
 {
 	int ret = 0;
 
-	pr_debug("%s(): substream = %s, auxpcm_rsc_ref counter = %d\n",
-		__func__, substream->name, atomic_read(&auxpcm_rsc_ref));
-	if (atomic_inc_return(&auxpcm_rsc_ref) == 1)
-		ret = msm_aux_pcm_get_gpios();
+	pr_debug("%s(): substream = %s\n", __func__, substream->name);
+	ret = msm_aux_pcm_get_gpios();
 	if (ret < 0) {
 		pr_err("%s: Aux PCM GPIO request failed\n", __func__);
 		return -EINVAL;
@@ -1629,10 +1541,8 @@ static int msm_slimbus_1_startup(struct snd_pcm_substream *substream)
 static void msm_auxpcm_shutdown(struct snd_pcm_substream *substream)
 {
 
-	pr_debug("%s(): substream = %s, auxpcm_rsc_ref counter = %d\n",
-		__func__, substream->name, atomic_read(&auxpcm_rsc_ref));
-	if (atomic_dec_return(&auxpcm_rsc_ref) == 0)
-		msm_aux_pcm_free_gpios();
+	pr_debug("%s(): substream = %s\n", __func__, substream->name);
+	msm_aux_pcm_free_gpios();
 }
 
 static void msm_shutdown(struct snd_pcm_substream *substream)
@@ -1685,13 +1595,11 @@ static struct snd_soc_ops msm_slimbus_4_be_ops = {
 	.hw_params = msm_slimbus_4_hw_params,
 	.shutdown = msm_shutdown,
 };
-
 static struct snd_soc_ops msm_slimbus_2_be_ops = {
 	.startup = msm_startup,
 	.hw_params = msm_slimbus_2_hw_params,
 	.shutdown = msm_shutdown,
 };
-
 
 /* Digital audio interface glue - connects codec <---> CPU */
 static struct snd_soc_dai_link msm_dai[] = {
@@ -2015,11 +1923,6 @@ static struct snd_soc_dai_link msm_dai[] = {
 		.platform_name = "msm-pcm-routing",
 		.codec_name = "msm-stub-codec.1",
 		.codec_dai_name = "msm-stub-rx",
-#if 0
-		//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [START]
-		//.init = &msm_auxpcm_init,
-		//[AUDIO_BSP][WB BT] junday.lee@lge.com 2012-11-29 Support WB Aux PCM BT SOC [END]
-#endif
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_AUXPCM_RX,
 		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
@@ -2036,7 +1939,6 @@ static struct snd_soc_dai_link msm_dai[] = {
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_AUXPCM_TX,
 		.be_hw_params_fixup = msm_auxpcm_be_params_fixup,
-		.ops = &msm_auxpcm_be_ops,
 	},
 	{
 		.name = LPASS_BE_STUB_RX,
@@ -2185,7 +2087,7 @@ static struct snd_soc_dai_link msm_dai[] = {
 	},
 };
 
-static struct snd_soc_card snd_soc_card_msm = {
+struct snd_soc_card snd_soc_card_msm = {
 	.name		= "apq8064-tabla-snd-card",
 	.dai_link	= msm_dai,
 	.num_links	= ARRAY_SIZE(msm_dai),
@@ -2195,74 +2097,14 @@ static struct snd_soc_card snd_soc_card_msm = {
 
 static struct platform_device *msm_snd_device;
 
-#ifdef CONFIG_WCD9310_MBHC
-static int msm_configure_headset_mic_gpios(void)
-{
-	int ret;
-	struct pm_gpio param = {
-		.direction      = PM_GPIO_DIR_OUT,
-		.output_buffer  = PM_GPIO_OUT_BUF_CMOS,
-		.output_value   = 1,
-		.pull	   = PM_GPIO_PULL_NO,
-		.vin_sel	= PM_GPIO_VIN_S4,
-		.out_strength   = PM_GPIO_STRENGTH_MED,
-		.function       = PM_GPIO_FUNC_NORMAL,
-	};
-
-	ret = gpio_request(PM8921_GPIO_PM_TO_SYS(23), "AV_SWITCH");
-	if (ret) {
-		pr_err("%s: Failed to request gpio %d\n", __func__,
-			PM8921_GPIO_PM_TO_SYS(23));
-		return ret;
-	}
-
-	ret = pm8xxx_gpio_config(PM8921_GPIO_PM_TO_SYS(23), &param);
-	if (ret)
-		pr_err("%s: Failed to configure gpio %d\n", __func__,
-			PM8921_GPIO_PM_TO_SYS(23));
-	else
-		gpio_direction_output(PM8921_GPIO_PM_TO_SYS(23), 0);
-
-	ret = gpio_request(PM8921_GPIO_PM_TO_SYS(35), "US_EURO_SWITCH");
-	if (ret) {
-		pr_err("%s: Failed to request gpio %d\n", __func__,
-			PM8921_GPIO_PM_TO_SYS(35));
-		gpio_free(PM8921_GPIO_PM_TO_SYS(23));
-		return ret;
-	}
-	ret = pm8xxx_gpio_config(PM8921_GPIO_PM_TO_SYS(35), &param);
-	if (ret)
-		pr_err("%s: Failed to configure gpio %d\n", __func__,
-			PM8921_GPIO_PM_TO_SYS(35));
-	else
-		gpio_direction_output(PM8921_GPIO_PM_TO_SYS(35), 0);
-	return 0;
-}
-
-static void msm_free_headset_mic_gpios(void)
-{
-
-	if (msm_headset_gpios_configured) {
-		gpio_free(PM8921_GPIO_PM_TO_SYS(23));
-		gpio_free(PM8921_GPIO_PM_TO_SYS(35));
-	}
-}
-#endif
-
 static int __init msm_audio_init(void)
 {
 	int ret;
-	u32	version = socinfo_get_platform_version();
-	if (!(cpu_is_apq8064() || cpu_is_apq8064ab()) ||
-		(socinfo_get_id() == 130) ||
-		(machine_is_apq8064_mtp() &&
-		(SOCINFO_VERSION_MINOR(version) == 1))) {
-		pr_info("%s: Not APQ8064 in SLIMBUS mode\n", __func__);
+
+	if (!cpu_is_apq8064() || (socinfo_get_id() == 130)) {
+		pr_err("%s: Not the right machine type\n", __func__);
 		return -ENODEV;
 	}
-
-	if (socinfo_get_pmic_model() == PMIC_MODEL_PM8917)
-		bottom_spk_pamp_gpio = PM8921_GPIO_PM_TO_SYS(16);
 
 	mbhc_cfg.calibration = def_tabla_mbhc_cal();
 	if (!mbhc_cfg.calibration) {
@@ -2285,16 +2127,7 @@ static int __init msm_audio_init(void)
 		return ret;
 	}
 
-#ifdef CONFIG_WCD9310_MBHC
-	if (msm_configure_headset_mic_gpios()) {
-		pr_err("%s Fail to configure headset mic gpios\n", __func__);
-		msm_headset_gpios_configured = 0;
-	} else
-		msm_headset_gpios_configured = 1;
-#endif
-
 	mutex_init(&cdc_mclk_mutex);
-	atomic_set(&auxpcm_rsc_ref, 0);
 	return ret;
 
 }
@@ -2302,14 +2135,10 @@ module_init(msm_audio_init);
 
 static void __exit msm_audio_exit(void)
 {
-	if (!(cpu_is_apq8064() || cpu_is_apq8064ab()) ||
-				 (socinfo_get_id() == 130)) {
+	if (!cpu_is_apq8064() || (socinfo_get_id() == 130)) {
 		pr_err("%s: Not the right machine type\n", __func__);
 		return ;
 	}
-#ifdef CONFIG_WCD9310_MBHC
-	msm_free_headset_mic_gpios();
-#endif
 	platform_device_unregister(msm_snd_device);
 	if (mbhc_cfg.gpio)
 		gpio_free(mbhc_cfg.gpio);

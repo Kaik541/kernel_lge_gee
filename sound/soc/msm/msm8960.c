@@ -83,16 +83,10 @@ static int msm8960_headset_gpios_configured;
 
 static struct snd_soc_jack hs_jack;
 static struct snd_soc_jack button_jack;
-static atomic_t auxpcm_rsc_ref;
 
 static bool hs_detect_use_gpio;
 module_param(hs_detect_use_gpio, bool, 0444);
 MODULE_PARM_DESC(hs_detect_use_gpio, "Use GPIO for headset detection");
-
-static bool hs_detect_extn_cable;
-module_param(hs_detect_extn_cable, bool, 0444);
-MODULE_PARM_DESC(hs_detect_extn_cable, "Enable extension cable feature");
-
 
 static bool hs_detect_use_firmware;
 module_param(hs_detect_use_firmware, bool, 0444);
@@ -114,7 +108,6 @@ static struct tabla_mbhc_config mbhc_cfg = {
 	.gpio_irq = 0,
 	.gpio_level_insert = 1,
 	.swap_gnd_mic = NULL,
-	.detect_extn_cable = false,
 };
 
 static u32 us_euro_sel_gpio = PM8921_GPIO_PM_TO_SYS(JACK_US_EURO_SEL_GPIO);
@@ -722,20 +715,20 @@ static void *def_tabla_mbhc_cal(void)
 	btn_low = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_V_BTN_LOW);
 	btn_high = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_V_BTN_HIGH);
 	btn_low[0] = -50;
-	btn_high[0] = 10;
-	btn_low[1] = 11;
-	btn_high[1] = 52;
-	btn_low[2] = 53;
-	btn_high[2] = 94;
-	btn_low[3] = 95;
-	btn_high[3] = 133;
-	btn_low[4] = 134;
-	btn_high[4] = 171;
-	btn_low[5] = 172;
-	btn_high[5] = 208;
-	btn_low[6] = 209;
-	btn_high[6] = 244;
-	btn_low[7] = 245;
+	btn_high[0] = 20;
+	btn_low[1] = 21;
+	btn_high[1] = 62;
+	btn_low[2] = 63;
+	btn_high[2] = 104;
+	btn_low[3] = 105;
+	btn_high[3] = 143;
+	btn_low[4] = 144;
+	btn_high[4] = 181;
+	btn_low[5] = 182;
+	btn_high[5] = 218;
+	btn_low[6] = 219;
+	btn_high[6] = 254;
+	btn_low[7] = 255;
 	btn_high[7] = 330;
 	n_ready = tabla_mbhc_cal_btn_det_mp(btn_cfg, TABLA_BTN_DET_N_READY);
 	n_ready[0] = 80;
@@ -918,10 +911,9 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	snd_soc_dapm_sync(dapm);
 
 	err = snd_soc_jack_new(codec, "Headset Jack",
-			       (SND_JACK_HEADSET | SND_JACK_LINEOUT |
-				SND_JACK_OC_HPHL | SND_JACK_OC_HPHR |
-				SND_JACK_UNSUPPORTED),
-				&hs_jack);
+			       (SND_JACK_HEADSET | SND_JACK_OC_HPHL |
+				SND_JACK_OC_HPHR | SND_JACK_UNSUPPORTED),
+			       &hs_jack);
 	if (err) {
 		pr_err("failed to create new jack\n");
 		return err;
@@ -942,8 +934,6 @@ static int msm8960_audrx_init(struct snd_soc_pcm_runtime *rtd)
 	if (hs_detect_use_gpio) {
 		mbhc_cfg.gpio = PM8921_GPIO_PM_TO_SYS(JACK_DETECT_GPIO);
 		mbhc_cfg.gpio_irq = JACK_DETECT_INT;
-		if (hs_detect_extn_cable)
-			mbhc_cfg.detect_extn_cable = true;
 	}
 
 	if (mbhc_cfg.gpio) {
@@ -1132,11 +1122,8 @@ static int msm8960_auxpcm_startup(struct snd_pcm_substream *substream)
 {
 	int ret = 0;
 
-	pr_debug("%s(): substream = %s, auxpcm_rsc_ref counter = %d\n",
-		__func__, substream->name, atomic_read(&auxpcm_rsc_ref));
-	if (atomic_inc_return(&auxpcm_rsc_ref) == 1)
-		ret = msm8960_aux_pcm_get_gpios();
-
+	pr_debug("%s(): substream = %s\n", __func__, substream->name);
+	ret = msm8960_aux_pcm_get_gpios();
 	if (ret < 0) {
 		pr_err("%s: Aux PCM GPIO request failed\n", __func__);
 		return -EINVAL;
@@ -1146,10 +1133,9 @@ static int msm8960_auxpcm_startup(struct snd_pcm_substream *substream)
 
 static void msm8960_auxpcm_shutdown(struct snd_pcm_substream *substream)
 {
-	pr_debug("%s(): substream = %s, auxpcm_rsc_ref counter = %d\n",
-		__func__, substream->name, atomic_read(&auxpcm_rsc_ref));
-	if (atomic_dec_return(&auxpcm_rsc_ref) == 0)
-		msm8960_aux_pcm_free_gpios();
+
+	pr_debug("%s(): substream = %s\n", __func__, substream->name);
+	msm8960_aux_pcm_free_gpios();
 }
 
 static void msm8960_shutdown(struct snd_pcm_substream *substream)
@@ -1485,7 +1471,6 @@ static struct snd_soc_dai_link msm8960_dai_common[] = {
 		.no_pcm = 1,
 		.be_id = MSM_BACKEND_DAI_AUXPCM_TX,
 		.be_hw_params_fixup = msm8960_auxpcm_be_params_fixup,
-		.ops = &msm8960_auxpcm_be_ops,
 	},
 	/* Incall Music BACK END DAI Link */
 	{
@@ -1769,21 +1754,14 @@ static int __init msm8960_audio_init(void)
 		return ret;
 	}
 
-	if (cpu_is_msm8960()) {
-		if (msm8960_configure_headset_mic_gpios()) {
-			pr_err("%s Fail to configure headset mic gpios\n",
-								__func__);
-			msm8960_headset_gpios_configured = 0;
-		} else
-			msm8960_headset_gpios_configured = 1;
-	} else {
+	if (msm8960_configure_headset_mic_gpios()) {
+		pr_err("%s Fail to configure headset mic gpios\n", __func__);
 		msm8960_headset_gpios_configured = 0;
-		pr_debug("%s headset GPIO 23 and 35 not configured msm960ab",
-								__func__);
-	}
+	} else
+		msm8960_headset_gpios_configured = 1;
 
 	mutex_init(&cdc_mclk_mutex);
-	atomic_set(&auxpcm_rsc_ref, 0);
+
 	return ret;
 
 }

@@ -41,16 +41,17 @@
 #define AGC_FIXED_GAIN              12
 #endif
 
+#define GPIO_EAR_MIC_BIAS_EN        PM8921_GPIO_PM_TO_SYS(20)
+#define GPIO_EAR_SENSE_N            82
 
 #if defined(CONFIG_MACH_APQ8064_GKKT)||defined(CONFIG_MACH_APQ8064_GKSK)||defined(CONFIG_MACH_APQ8064_GKU)||defined(CONFIG_MACH_APQ8064_GKATT)
-#define GPIO_EAR_SENSE_N             38
+#define GPIO_EAR_SENSE_N_REV11      38
 #else
-#define GPIO_EAR_SENSE_N             82
+#define GPIO_EAR_SENSE_N_REV11      82
 #endif
 #define GPIO_EAR_MIC_EN             PM8921_GPIO_PM_TO_SYS(31)
 #define GPIO_EARPOL_DETECT          PM8921_GPIO_PM_TO_SYS(32)
 #define GPIO_EAR_KEY_INT            83
-
 
 #define I2C_SURF 1
 #define I2C_FFA  (1 << 1)
@@ -141,7 +142,6 @@ static struct i2c_board_info msm_i2c_audiosubsystem_info[] = {
 #endif
 };
 
-
 static struct i2c_registry msm_i2c_audiosubsystem __initdata = {
 	/* Add the I2C driver for Audio Amp, ehgrace.kim@lge.cim, 06/13/2011 */
 		 I2C_SURF | I2C_FFA | I2C_RUMI | I2C_SIM | I2C_LIQUID | I2C_J1V,
@@ -159,86 +159,87 @@ static void __init lge_add_i2c_tpa2028d_devices(void)
 				msm_i2c_audiosubsystem.len);
 }
 
-#ifdef CONFIG_SWITCH_FSA8008
+static void enable_external_mic_bias(int status)
+{
+        static struct regulator *reg_mic_bias = NULL;
+        static int prev_on;
+        int rc = 0;
+
+        if (status == prev_on)
+                return;
+
+        if (lge_get_board_revno() > HW_REV_C) {
+                if (!reg_mic_bias) {
+                        reg_mic_bias = regulator_get(NULL, "mic_bias");
+                        if (IS_ERR(reg_mic_bias)) {
+                                pr_err("%s: could not regulator_get\n",
+                                                __func__);
+                                reg_mic_bias = NULL;
+                                return;
+                        }
+                }
+
+                if (status) {
+                        rc = regulator_enable(reg_mic_bias);
+                        if (rc)
+                                pr_err("%s: regulator enable failed\n",
+                                                __func__);
+                        pr_debug("%s: mic_bias is on\n", __func__);
+                } else {
+                        rc = regulator_disable(reg_mic_bias);
+                        if (rc)
+                                pr_warn("%s: regulator disable failed\n",
+                                                __func__);
+                        pr_debug("%s: mic_bias is off\n", __func__);
+                }
+        }
+
+        if (lge_get_board_revno() < HW_REV_1_0)
+                gpio_set_value_cansleep(GPIO_EAR_MIC_BIAS_EN, status);
+        prev_on = status;
+}
+
 static struct fsa8008_platform_data lge_hs_pdata = {
-	.switch_name = "h2w",
-	.keypad_name = "hs_detect",
+        .switch_name = "h2w",
+        .keypad_name = "hs_detect",
 
-	.key_code = KEY_MEDIA,
+        .key_code = KEY_MEDIA,
 
-	.gpio_detect = GPIO_EAR_SENSE_N,
-	.gpio_mic_en = GPIO_EAR_MIC_EN,
-	.gpio_jpole  = GPIO_EARPOL_DETECT,
-	.gpio_key    = GPIO_EAR_KEY_INT,
+        .gpio_detect = GPIO_EAR_SENSE_N,
+        .gpio_mic_en = GPIO_EAR_MIC_EN,
+        .gpio_mic_bias_en = GPIO_EAR_MIC_BIAS_EN,
+        .gpio_jpole  = GPIO_EARPOL_DETECT,
+        .gpio_key    = GPIO_EAR_KEY_INT,
 
-	.set_headset_mic_bias = NULL,
-
-	.latency_for_detection = 75,
+        .latency_for_detection = 75,
+        .set_headset_mic_bias = enable_external_mic_bias,
 };
+
+static __init void j1_fixed_audio(void)
+{
+        if (lge_get_board_revno() >= HW_REV_1_0)
+                lge_hs_pdata.gpio_mic_bias_en = -1;
+        if (lge_get_board_revno() > HW_REV_1_0) {
+                lge_hs_pdata.gpio_detect = GPIO_EAR_SENSE_N_REV11;
+                lge_hs_pdata.gpio_detect_can_wakeup = 1;
+        }
+}
 
 static struct platform_device lge_hsd_device = {
-	.name = "fsa8008",
-	.id   = -1,
-	.dev = {
-		.platform_data = &lge_hs_pdata,
-	},
+        .name = "fsa8008",
+        .id   = -1,
+        .dev = {
+                .platform_data = &lge_hs_pdata,
+        },
 };
 
-static int __init lge_hsd_fsa8008_init(void)
-{
-    hw_rev_type bd_rev = -1;
-    hw_rev_type lge_bd_rev = HW_REV_EVB1;
-	printk(KERN_INFO "lge_hsd_fsa8008_init\n");
-
-#if defined(CONFIG_MACH_APQ8064_J1SK)|| defined(CONFIG_MACH_APQ8064_J1KT)
-    bd_rev = HW_REV_E;
-#endif
-#if defined(CONFIG_MACH_APQ8064_J1R) || defined(CONFIG_MACH_APQ8064_J1B) || defined(CONFIG_MACH_APQ8064_J1TL)    
-	bd_rev = HW_REV_A;
-#endif
-#if defined(CONFIG_MACH_APQ8064_J1D) || defined(CONFIG_MACH_APQ8064_J1KD) || defined(CONFIG_MACH_APQ8064_J1VD)
-    bd_rev = HW_REV_C;
-#endif
-#if defined(CONFIG_MACH_APQ8064_J1A) || defined(CONFIG_MACH_APQ8064_J1SP)
-    bd_rev = HW_REV_D;
-#endif
-#if defined(CONFIG_MACH_APQ8064_J1U)
-    bd_rev = HW_REV_E;
-#endif
-#if defined(CONFIG_MACH_APQ8064_GKU) || defined(CONFIG_MACH_APQ8064_GKSK) || defined(CONFIG_MACH_APQ8064_GKKT) || defined(CONFIG_MACH_APQ8064_GKATT)
-    bd_rev = HW_REV_E;
-#endif
-
-    if(bd_rev < 0) {
-        lge_hs_pdata.set_headset_mic_bias = NULL;
-        printk(KERN_INFO "Board Revision is not defined, default setting is set_headset_mic_bias = NULL,\n");
-    }
-    else {
-        lge_bd_rev = lge_get_board_revno();
-
-        if (lge_bd_rev >= bd_rev) {
-            lge_hs_pdata.set_headset_mic_bias = set_headset_mic_bias_l29; //[AUDIO_BSP], 20120730, sehwan.lee@lge.com PMIC L29 Control(because headset noise)
-            printk(KERN_INFO "lge_bd_rev : %d, >= bd_rev : %d, so set set_headset_mic_bias = NULL!!!\n", lge_bd_rev, bd_rev);
-        }
-        else {
-            lge_hs_pdata.set_headset_mic_bias = tabla_codec_micbias2_ctl;
-            printk(KERN_INFO "lge_bd_rev : %d, < bd_rev : %d, so set_mic_bias = tabla_codec_micbias2_ctl!!!\n", lge_bd_rev, bd_rev);
-        }
-    }
-	return platform_device_register(&lge_hsd_device);
-}
-
-static void __exit lge_hsd_fsa8008_exit(void)
-{
-	printk(KERN_INFO "lge_hsd_fsa8008_exit\n");
-	platform_device_unregister(&lge_hsd_device);
-}
-#endif
+static struct platform_device *sound_devices[] __initdata = {
+        &lge_hsd_device,
+};
 
 void __init lge_add_sound_devices(void)
 {
-	lge_add_i2c_tpa2028d_devices();
-#ifdef CONFIG_SWITCH_FSA8008
-	lge_hsd_fsa8008_init();
-#endif
+        j1_fixed_audio();
+        lge_add_i2c_tpa2028d_devices();
+        platform_add_devices(sound_devices, ARRAY_SIZE(sound_devices));
 }
