@@ -157,7 +157,10 @@ struct wcd9xxx {
 	int num_rx_port;
 	int num_tx_port;
 
-	u8 idbyte[4];
+	u8 idbyte_0;
+	u8 idbyte_1;
+	u8 idbyte_2;
+	u8 idbyte_3;
 };
 
 int wcd9xxx_reg_read(struct wcd9xxx *wcd9xxx, unsigned short reg);

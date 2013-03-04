@@ -27,9 +27,9 @@
 #include <linux/i2c.h>
 #include <sound/soc.h>
 
+#define WCD9XXX_SLIM_GLA_MAX_RETRIES 5
 #define WCD9XXX_REGISTER_START_OFFSET 0x800
 #define WCD9XXX_SLIM_RW_MAX_TRIES 3
-#define SLIMBUS_PRESENT_TIMEOUT 100
 
 #define MAX_WCD9XXX_DEVICE	4
 #define TABLA_I2C_MODE	0x03
@@ -253,19 +253,6 @@ static struct mfd_cell taiko_devs[] = {
 	},
 };
 
-static struct wcd9xx_codec_type {
-	u8 byte[4];
-	struct mfd_cell *dev;
-	int size;
-} wcd9xxx_codecs[] = {
-	{{0x2, 0x0, 0x0, 0x1}, tabla_devs, ARRAY_SIZE(tabla_devs)},
-	{{0x1, 0x0, 0x0, 0x1}, tabla1x_devs, ARRAY_SIZE(tabla1x_devs)},
-	{{0x0, 0x0, 0x2, 0x1}, taiko_devs, ARRAY_SIZE(taiko_devs)},
-	{{0x0, 0x0, 0x0, 0x1}, sitar_devs, ARRAY_SIZE(sitar_devs)},
-	{{0x1, 0x0, 0x1, 0x1}, sitar_devs, ARRAY_SIZE(sitar_devs)},
-	{{0x2, 0x0, 0x1, 0x1}, sitar_devs, ARRAY_SIZE(sitar_devs)},
-};
-
 static void wcd9xxx_bring_up(struct wcd9xxx *wcd9xxx)
 {
 	wcd9xxx_reg_write(wcd9xxx, WCD9XXX_A_LEAKAGE_CTL, 0x4);
@@ -296,6 +283,8 @@ static int wcd9xxx_reset(struct wcd9xxx *wcd9xxx)
 			return ret;
 		}
 
+		gpio_direction_output(wcd9xxx->reset_gpio, 1);
+		msleep(20);
 		gpio_direction_output(wcd9xxx->reset_gpio, 0);
 		msleep(20);
 		gpio_direction_output(wcd9xxx->reset_gpio, 1);
@@ -310,53 +299,6 @@ static void wcd9xxx_free_reset(struct wcd9xxx *wcd9xxx)
 		gpio_free(wcd9xxx->reset_gpio);
 		wcd9xxx->reset_gpio = 0;
 	}
-}
-static int wcd9xxx_check_codec_type(struct wcd9xxx *wcd9xxx,
-					struct mfd_cell **wcd9xxx_dev,
-					int *wcd9xxx_dev_size)
-{
-	int i;
-	int ret;
-	i = WCD9XXX_A_CHIP_ID_BYTE_0;
-	while (i <= WCD9XXX_A_CHIP_ID_BYTE_3) {
-		ret = wcd9xxx_reg_read(wcd9xxx, i);
-		if (ret < 0)
-			goto exit;
-		wcd9xxx->idbyte[i-WCD9XXX_A_CHIP_ID_BYTE_0] = (u8)ret;
-		pr_debug("%s: wcd9xx read = %x, byte = %x\n", __func__, ret,
-			i);
-		i++;
-	}
-
-	/* Read codec version */
-	ret = wcd9xxx_reg_read(wcd9xxx, WCD9XXX_A_CHIP_VERSION);
-	if (ret < 0)
-		goto exit;
-	wcd9xxx->version = (u8)ret & 0x1F;
-	i = 0;
-	while (i < ARRAY_SIZE(wcd9xxx_codecs)) {
-		if ((wcd9xxx_codecs[i].byte[0] == wcd9xxx->idbyte[0]) &&
-		    (wcd9xxx_codecs[i].byte[1] == wcd9xxx->idbyte[1]) &&
-		    (wcd9xxx_codecs[i].byte[2] == wcd9xxx->idbyte[2]) &&
-		    (wcd9xxx_codecs[i].byte[3] == wcd9xxx->idbyte[3])) {
-			pr_info("%s: codec is %s", __func__,
-				wcd9xxx_codecs[i].dev->name);
-			*wcd9xxx_dev = wcd9xxx_codecs[i].dev;
-			*wcd9xxx_dev_size = wcd9xxx_codecs[i].size;
-			break;
-		}
-		i++;
-	}
-	if (*wcd9xxx_dev == NULL || *wcd9xxx_dev_size == 0)
-		ret = -ENODEV;
-	pr_info("%s: Read codec idbytes & version\n"
-		"byte_0[%08x] byte_1[%08x] byte_2[%08x]\n"
-		" byte_3[%08x] version = %x\n", __func__,
-		wcd9xxx->idbyte[0], wcd9xxx->idbyte[1],
-		wcd9xxx->idbyte[2], wcd9xxx->idbyte[3],
-		wcd9xxx->version);
-exit:
-	return ret;
 }
 
 static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx, int irq)
@@ -386,11 +328,31 @@ static int wcd9xxx_device_init(struct wcd9xxx *wcd9xxx, int irq)
 			goto err;
 		}
 	}
-	ret = wcd9xxx_check_codec_type(wcd9xxx, &wcd9xxx_dev,
-					&wcd9xxx_dev_size);
 
-	if (ret < 0)
-		goto err_irq;
+	wcd9xxx->idbyte_0 = wcd9xxx_reg_read(wcd9xxx, WCD9XXX_A_CHIP_ID_BYTE_0);
+	wcd9xxx->idbyte_1 = wcd9xxx_reg_read(wcd9xxx, WCD9XXX_A_CHIP_ID_BYTE_1);
+	wcd9xxx->idbyte_2 = wcd9xxx_reg_read(wcd9xxx, WCD9XXX_A_CHIP_ID_BYTE_2);
+	wcd9xxx->idbyte_3 = wcd9xxx_reg_read(wcd9xxx, WCD9XXX_A_CHIP_ID_BYTE_3);
+
+	wcd9xxx->version = wcd9xxx_reg_read(wcd9xxx,
+			WCD9XXX_A_CHIP_VERSION) & 0x1F;
+	pr_info("%s : Codec version %u initialized\n",
+		__func__, wcd9xxx->version);
+
+	if (wcd9xxx->idbyte_0 == 0x2) {
+		wcd9xxx_dev = tabla_devs;
+		wcd9xxx_dev_size = ARRAY_SIZE(tabla_devs);
+	} else if (wcd9xxx->idbyte_0 == 0x1) {
+		wcd9xxx_dev = tabla1x_devs;
+		wcd9xxx_dev_size = ARRAY_SIZE(tabla1x_devs);
+	} else if (wcd9xxx->idbyte_0 == 0x0 && wcd9xxx->idbyte_1 == 0x0 &&
+		   wcd9xxx->idbyte_2 == 0x2 && wcd9xxx->idbyte_3 == 0x1) {
+		wcd9xxx_dev = taiko_devs;
+		wcd9xxx_dev_size = ARRAY_SIZE(taiko_devs);
+	} else if (wcd9xxx->idbyte_0 == 0x0) {
+		wcd9xxx_dev = sitar_devs;
+		wcd9xxx_dev_size = ARRAY_SIZE(sitar_devs);
+	}
 	ret = mfd_add_devices(wcd9xxx->dev, -1, wcd9xxx_dev, wcd9xxx_dev_size,
 			      NULL, 0);
 	if (ret != 0) {
@@ -804,9 +766,9 @@ static int __devinit wcd9xxx_i2c_probe(struct i2c_client *client,
 		goto err_device_init;
 	}
 
-	if ((wcd9xxx->idbyte[0] == 0x2) || (wcd9xxx->idbyte[0] == 0x1))
+	if ((wcd9xxx->idbyte_0 == 0x2) || (wcd9xxx->idbyte_0 == 0x1))
 		i2c_mode = TABLA_I2C_MODE;
-	else if (wcd9xxx->idbyte[0] == 0x0)
+	else if (wcd9xxx->idbyte_0 == 0x0)
 		i2c_mode = SITAR_I2C_MODE;
 
 	ret = wcd9xxx_read(wcd9xxx, WCD9XXX_A_CHIP_STATUS, 1, &val, 0);
@@ -1084,33 +1046,13 @@ err:
 	return NULL;
 }
 
-static int wcd9xxx_slim_get_laddr(struct slim_device *sb,
-				  const u8 *e_addr, u8 e_len, u8 *laddr)
-{
-	int ret;
-	const unsigned long timeout = jiffies +
-				      msecs_to_jiffies(SLIMBUS_PRESENT_TIMEOUT);
-
-	do {
-		ret = slim_get_logical_addr(sb, e_addr, e_len, laddr);
-		if (!ret)
-			break;
-		/* Give SLIMBUS time to report present and be ready. */
-		usleep_range(1000, 1000);
-		pr_debug_ratelimited("%s: retyring get logical addr\n",
-				     __func__);
-	} while time_before(jiffies, timeout);
-
-	return ret;
-}
-
 static int wcd9xxx_slim_probe(struct slim_device *slim)
 {
 	struct wcd9xxx *wcd9xxx;
 	struct wcd9xxx_pdata *pdata;
 	int ret = 0;
-	int sgla_retry_cnt; // [GK][SoundBSP] 2012-10-24 : retry when slim probe fail.
-	
+	int sgla_retry_cnt;
+
 	if (slim->dev.of_node) {
 		dev_info(&slim->dev, "Platform data from device tree\n");
 		pdata = wcd9xxx_populate_dt_pdata(&slim->dev);
@@ -1148,43 +1090,29 @@ static int wcd9xxx_slim_probe(struct slim_device *slim)
 		goto err_codec;
 	usleep_range(5, 5);
 
-// [GK][SoundBSP] 2012-10-24 : retry when slim probe fail.
-for(sgla_retry_cnt=0;sgla_retry_cnt<5;sgla_retry_cnt++)
-{
 	ret = wcd9xxx_reset(wcd9xxx);
 	if (ret) {
 		pr_err("%s: Resetting Codec failed\n", __func__);
 		goto err_supplies;
 	}
 
-	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim, wcd9xxx->slim->e_addr,
-				     ARRAY_SIZE(wcd9xxx->slim->e_addr),
-				     &wcd9xxx->slim->laddr);
-
-	printk("%s: get slimbus %s [sgla_retry_cnt = %d]\n",
-		       __func__,wcd9xxx->slim->name, sgla_retry_cnt);
-	if (!ret)
-		break;
-	else
-		wcd9xxx_free_reset(wcd9xxx);
-}
-
+	ret = slim_get_logical_addr(wcd9xxx->slim, wcd9xxx->slim->e_addr,
+		ARRAY_SIZE(wcd9xxx->slim->e_addr), &wcd9xxx->slim->laddr);
 	if (ret) {
-		pr_err("%s: failed to get slimbus %s logical address: %d\n",
-		       __func__, wcd9xxx->slim->name, ret);
-		
-		panic("Unable to find wcd9310 codec chip\n"); // [GK][SoundBSP] 2012-10-24 : retry when slim probe fail.
+		pr_err("fail to get slimbus logical address %d\n", ret);
 		goto err_reset;
 	}
-
 	wcd9xxx->read_dev = wcd9xxx_slim_read_device;
 	wcd9xxx->write_dev = wcd9xxx_slim_write_device;
 	wcd9xxx->irq = pdata->irq;
 	wcd9xxx->irq_base = pdata->irq_base;
 	wcd9xxx_pgd_la = wcd9xxx->slim->laddr;
 
-	if (pdata->num_irqs < TABLA_NUM_IRQS)
-		pr_warn("%s: Not enough interrupt lines allocated\n", __func__);
+	if (pdata->num_irqs < TABLA_NUM_IRQS) {
+		pr_err("%s: Error, not enough interrupt lines allocated\n",
+			__func__);
+		goto err_reset;
+	}
 
 	wcd9xxx->slim_slave = &pdata->slimbus_slave_device;
 
@@ -1194,14 +1122,28 @@ for(sgla_retry_cnt=0;sgla_retry_cnt<5;sgla_retry_cnt++)
 		goto err_reset;
 	}
 
-	ret = wcd9xxx_slim_get_laddr(wcd9xxx->slim_slave,
-				     wcd9xxx->slim_slave->e_addr,
-				     ARRAY_SIZE(wcd9xxx->slim_slave->e_addr),
-				     &wcd9xxx->slim_slave->laddr);
-	if (ret) {
-		pr_err("%s: failed to get slimbus %s logical address: %d\n",
-		       __func__, wcd9xxx->slim->name, ret);
-		goto err_slim_add;
+	sgla_retry_cnt = 0;
+
+	while (1) {
+		ret = slim_get_logical_addr(wcd9xxx->slim_slave,
+			wcd9xxx->slim_slave->e_addr,
+			ARRAY_SIZE(wcd9xxx->slim_slave->e_addr),
+			&wcd9xxx->slim_slave->laddr);
+		if (ret) {
+			if (sgla_retry_cnt++ < WCD9XXX_SLIM_GLA_MAX_RETRIES) {
+				/* Give SLIMBUS slave time to report present
+				   and be ready.
+				 */
+				usleep_range(1000, 1000);
+				pr_debug("%s: retry slim_get_logical_addr()\n",
+					__func__);
+				continue;
+			}
+			pr_err("fail to get slimbus slave logical address"
+				" %d\n", ret);
+			goto err_slim_add;
+		}
+		break;
 	}
 	wcd9xxx_inf_la = wcd9xxx->slim_slave->laddr;
 	wcd9xxx_intf = WCD9XXX_INTERFACE_TYPE_SLIMBUS;
