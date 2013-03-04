@@ -1,6 +1,5 @@
 #
-# Makefile for STPDRV devices.
+# Makefile for Immersion Touchsense vibrator devices.
 #
 
-obj-$(CONFIG_TSPDRV)	+= tspdrv.o
-
+obj-$(CONFIG_TOUCHSENSE_VIBRATOR)	+= tspdrv.o
