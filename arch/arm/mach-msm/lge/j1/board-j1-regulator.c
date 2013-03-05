@@ -129,12 +129,13 @@ VREG_CONSUMERS(L15) = {
 	REGULATOR_SUPPLY("touch_vdd",		NULL),
 };
 VREG_CONSUMERS(L16) = {
-	REGULATOR_SUPPLY("8921_l16",		NULL),
-	REGULATOR_SUPPLY("cam_vaf",		"4-001a"),
-	REGULATOR_SUPPLY("cam_vaf",		"4-0048"),
-	REGULATOR_SUPPLY("cam_vaf",		"4-006c"),
-	REGULATOR_SUPPLY("cam_vaf",		"4-0034"),
-	REGULATOR_SUPPLY("cam_vaf",		"4-0020"),
+        REGULATOR_SUPPLY("8921_l16",            NULL),
+        REGULATOR_SUPPLY("cam_vaf",             "4-001a"),
+        REGULATOR_SUPPLY("cam_vaf",             "4-0048"),
+        REGULATOR_SUPPLY("cam_vaf",             "4-006c"),
+        REGULATOR_SUPPLY("cam_vaf",             "4-0034"),
+        REGULATOR_SUPPLY("cam_vaf",             "4-0020"),
+        REGULATOR_SUPPLY("vibrator",            NULL),
 };
 VREG_CONSUMERS(L17) = {
 	REGULATOR_SUPPLY("8921_l17",		NULL),
