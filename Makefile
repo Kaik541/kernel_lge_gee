@@ -367,15 +367,10 @@ LINUXINCLUDE    := -I$(srctree)/arch/$(hdr-arch)/include \
 
 KBUILD_CPPFLAGS := -D__KERNEL__
 
-KBUILD_CFLAGS   := -Wstrict-prototypes -Wno-trigraphs \
-		   -fno-strict-aliasing -fno-common \
-		   -Wno-format-security \
-		   -fno-delete-null-pointer-checks -mno-unaligned-access \
-		   -mcpu=cortex-a15 -mfpu=neon -funsafe-math-optimizations \
-		   -fsingle-precision-constant -fpredictive-commoning -fipa-cp-clone \
-		   -fgcse-after-reload -ftree-vectorize -pipe \
-		   -funswitch-loops -floop-interchange \
-		   -floop-strip-mine -floop-block -O2
+KBUILD_CFLAGS   := -Wundef -Wstrict-prototypes -Wno-trigraphs \
+                   -fno-strict-aliasing -fno-common \
+                   -Wno-format-security \
+                   -fno-delete-null-pointer-checks
 
 KBUILD_AFLAGS_KERNEL :=
 KBUILD_CFLAGS_KERNEL :=
