@@ -20,6 +20,7 @@
 #include <mach/msm_bus_board.h>
 #include <mach/gpiomux.h>
 #include <mach/board_lge.h>
+#include <media/msm_camera.h>
 
 #include "devices.h"
 #include "board-j1.h"

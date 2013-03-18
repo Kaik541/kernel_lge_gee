@@ -65,20 +65,6 @@ struct msm_camera_device_platform_data {
 	struct msm_bus_scale_pdata *cam_bus_scale_table;
 };
 
-enum msm_camera_csi_data_format {
-        CSI_8BIT,
-        CSI_10BIT,
-        CSI_12BIT,
-};
-
-struct msm_camera_csi_params {
-        enum msm_camera_csi_data_format data_format;
-        uint8_t lane_cnt;
-        uint8_t lane_assign;
-        uint8_t settle_cnt;
-        uint8_t dpcm_scheme;
-};
-
 #ifdef CONFIG_SENSORS_MT9T013
 struct msm_camera_legacy_device_platform_data {
 	int sensor_reset;
@@ -180,21 +166,6 @@ enum msm_camera_type {
 enum msm_sensor_type {
 	BAYER_SENSOR,
 	YUV_SENSOR,
-};
-
-enum camera_vreg_type {
-        REG_LDO,
-        REG_VS,
-        REG_GPIO,
-        REG_MAX
-};
-
-struct camera_vreg_t {
-        const char *reg_name;
-        enum camera_vreg_type type;
-        int min_voltage;
-        int max_voltage;
-        int op_mode;
 };
 
 struct msm_gpio_set_tbl {
@@ -431,9 +402,13 @@ struct msm_panel_common_pdata {
         void *power_on_set_1;
         void *power_on_set_2;
         void *power_on_set_3;
+    	void *power_on_set_ief;
+	    void *power_off_set_ief;
         ssize_t power_on_set_size_1;
         ssize_t power_on_set_size_2;
         ssize_t power_on_set_size_3;
+     	ssize_t power_on_set_ief_size;
+     	ssize_t power_off_set_ief_size;	
         void *power_off_set_1;
         void *power_off_set_2;
         ssize_t power_off_set_size_1;
