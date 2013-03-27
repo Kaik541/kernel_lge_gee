@@ -1297,8 +1297,7 @@ static long msm_ioctl_server(struct file *file, void *fh,
 	int i;
 
 	D("%s: cmd %d\n", __func__, _IOC_NR(cmd));
-	printk("%s: cmd %d\n", __func__, _IOC_NR(cmd));
-        printk("%s: IOCTL = %d", __func__, cmd);
+
 	switch (cmd) {
 	case MSM_CAM_V4L2_IOCTL_GET_CAMERA_INFO:
 		if (copy_from_user(&temp_cam_info,
