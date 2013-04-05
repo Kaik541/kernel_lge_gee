@@ -3968,7 +3968,7 @@ static void __init apq8064_cdp_init(void)
 #endif
 }
 
-MACHINE_START(APQ8064_GK, "QCT APQ8064 GK")
+/*MACHINE_START(APQ8064_GK, "QCT APQ8064 GK")
 	.map_io = apq8064_map_io,
 	.reserve = apq8064_reserve,
 	.init_irq = apq8064_init_irq,
@@ -3978,7 +3978,7 @@ MACHINE_START(APQ8064_GK, "QCT APQ8064 GK")
 	.init_early = apq8064_allocate_memory_regions,
 	.init_very_early = apq8064_early_reserve,
 	.restart = msm_restart,
-MACHINE_END
+MACHINE_END*/
 
 MACHINE_START(APQ8064_CDP, "QCT APQ8064 CDP")
 	.map_io = apq8064_map_io,

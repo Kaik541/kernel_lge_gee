@@ -157,7 +157,7 @@ static struct msm_gpiomux_config apq8064_cam_common_configs[] = {
 	},
 };
 
-#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091) || defined(CONFIG_IMX119)
+#if defined(CONFIG_IMX111) || defined(CONFIG_IMX091)
 static struct msm_bus_vectors cam_init_vectors[] = {
 	{
 		.src = MSM_BUS_MASTER_VFE,
@@ -204,8 +204,8 @@ static struct msm_bus_vectors cam_video_vectors[] = {
 	{
 		.src = MSM_BUS_MASTER_VFE,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = 274406400,
-		.ib  = 1812430080,
+		.ab  = 140451840,
+		.ib  = 561807360,
 	},
 	{
 		.src = MSM_BUS_MASTER_VPE,
@@ -225,9 +225,8 @@ static struct msm_bus_vectors cam_snapshot_vectors[] = {
 	{
 		.src = MSM_BUS_MASTER_VFE,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = 274423680,
-                .ab  = 411635520,  // org 274423680  /* LGE_CHANGE, increase VFE-EBI bandwidth for fix UI-freezing, 2012.12.27, seongjo.kim@lge.com */
-                .ib  = 1646542080, // org 1097694720 /* LGE_CHANGE, increase VFE-EBI bandwidth for fix UI-freezing, 2012.12.27, seongjo.kim@lge.com */
+		.ab  = 411635520,  // org 274423680  /* LGE_CHANGE, increase VFE-EBI bandwidth for fix UI-freezing, 2012.12.27, seongjo.kim@lge.com */
+		.ib  = 1646542080, // org 1097694720 /* LGE_CHANGE, increase VFE-EBI bandwidth for fix UI-freezing, 2012.12.27, seongjo.kim@lge.com */
 	},
 	{
 		.src = MSM_BUS_MASTER_VPE,
@@ -259,7 +258,7 @@ static struct msm_bus_vectors cam_zsl_vectors[] = {
 	{
 		.src = MSM_BUS_MASTER_JPEG_ENC,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
-		.ab  = 540000000,
+		.ab  = 810000000, // org 540000000, /* LGE_CHANGE, increase JPEG_ENC ab value for fix TMS Issue, 2013.01.13, seongjo.kim@lge.com */
 		.ib  = 2025000000,
 	},
 };
@@ -483,7 +482,7 @@ static struct msm_camera_sensor_platform_info sensor_board_info_imx091 = {
 };
 
 static struct i2c_board_info imx091_eeprom_i2c_info = {
-	I2C_BOARD_INFO("imx091_eeprom", 0x21),
+	I2C_BOARD_INFO("imx091_eeprom", 0x53), //LGE_Update yt.jeon@lge.com eeprom I2C address 0xA6>>1 20120702
 };
 
 static struct msm_eeprom_info imx091_eeprom_info = {
