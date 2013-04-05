@@ -294,6 +294,7 @@ struct msm_cam_media_controller {
 	struct v4l2_subdev *eeprom_sdev; /* eeprom sub device */
 	struct v4l2_subdev *cpp_sdev;/*cpp sub device*/
 
+	struct msm_isp_ops *isp_sdev;    /* isp sub device : camif/VFE */
 	struct msm_cam_config_dev *config_device;
 
 	/*mctl session control information*/
@@ -324,6 +325,21 @@ struct msm_cam_media_controller {
 	/*IOMMU domain for this session*/
 	int domain_num;
 	struct iommu_domain *domain;
+};
+
+/* abstract camera device represents a VFE and connected sensor */
+struct msm_isp_ops {
+	char *config_dev_name;
+
+	int (*isp_config)(struct msm_cam_media_controller *pmctl,
+		 unsigned int cmd, unsigned long arg);
+	int (*isp_notify)(struct v4l2_subdev *sd,
+		unsigned int notification, void *arg);
+	int (*isp_pp_cmd)(struct msm_cam_media_controller *pmctl,
+		 struct msm_mctl_pp_cmd, void *data);
+
+	/* vfe subdevice */
+	struct v4l2_subdev *sd;
 };
 
 struct msm_isp_buf_info {

@@ -780,6 +780,7 @@ int msm_isp_config(struct msm_cam_media_controller *pmctl,
 }
 EXPORT_SYMBOL(msm_isp_config);
 
+
 int msm_isp_subdev_ioctl(struct v4l2_subdev *isp_subdev,
 	struct msm_vfe_cfg_cmd *cfgcmd, void *data)
 {

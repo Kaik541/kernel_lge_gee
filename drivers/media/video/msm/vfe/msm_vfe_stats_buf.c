@@ -359,7 +359,7 @@ static int msm_stats_dqbuf(struct msm_stats_bufq_ctrl *stats_ctrl,
 	printk("%s: Set bufs \n", __func__);
 	printk("%s: bufq : %d\n", __func__, bufq);
 //    printk("%s: bufq->head : %d\n", __func__, bufq->head);
-        if(bufq != 0){
+//        if(bufq != 0){
 	list_for_each_entry(stats_buf, &bufq->head, list) {
 	printk("%s: stats_buf : %d\n", __func__, stats_buf->state);
 		if (stats_buf->state == MSM_STATS_BUFFER_STATE_QUEUED) {
@@ -369,7 +369,7 @@ static int msm_stats_dqbuf(struct msm_stats_bufq_ctrl *stats_ctrl,
 			break;
 		}
 	}
-        }
+//        }
 	if (!(*pp_stats_buf)) {
 		D("%s: no free stats buf, type = %d",
 			__func__, stats_type);
